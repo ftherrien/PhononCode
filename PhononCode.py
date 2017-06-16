@@ -4,27 +4,41 @@ import matplotlib.pyplot as plt
 import scipy.fftpack
 import time
 import random as rd
+from mpi4py import MPI
 
 plt.close("all")
 
-# Initial parameters:
+# Initial calls
+comm = MPI.COMM_WORLD
+master = 0
+n_proc = comm.Get_size()
+rank = comm.Get_rank()
+
+## PARAMETERS #######################################################################
 c=1 #Interatomic spacing
-nb=1 #Number of particles per cell
+nb=1 #Number of particles per primitive cell
 n=100 #number of primitive cell in super cell
 nE = 600 #Number of energy values on scale
 Nc=1 #Number of Sc in Von Karman cell
 T = 300 #Temperature in Kelvin
 
-gaussian = True
+# Potential
+V=np.array([1])*(1+0*1j) #Potential vector (without defects)
+# Masses
+Mvec = np.ones(nb) # Mass vector (without defects)
+
+gaussian = True # Gaussian minimal width
 CutOffErr=10**-4 # Cuttoff value for energy difference
-w =  1/n#width of gaussian in fraction of the max energy
+w =  1/n # width of gaussian in fraction of the max energy
 # Good width: 0.035
 
-defects = False
+defects = True
+#Presence of defects
 # dtypes:
 # ordered: will repeat defect periodically to obtain DefConc, if multiple defect types are specified they will be
 # stacked next to each other and will have the same concentration other concentrations will be ignored
 # random: defects are scattered randomly in the supercell, different types of defects can have different concentrations
+# cluster: defects are have higher probability to be near another defect, the location of the first defect is random. The clusterSize variable controls the standanrd deviation of the density of probability
 dtype = ["cluster","random"]
 clusterSize = [3,3]
 mval = np.array([[2],[3]])
@@ -32,26 +46,28 @@ kval = np.array([[2],[3]])
 DefConc = [0.05,0.1] #concentratation of defects
 
 #Images output folder
-folder = "images\\"
+folder = "images/"
 
 #Constant
 hbar_kb=7.63824*10**(-12) #second kelvins
 
-#Errors ----------------------------------------------------------------------------------------------------------------
+# There should be no need to modify anything after this line
+## PARAMETERS #######################################################################
+
+#Timing
+if rank==master:
+    t_total_i = time.time()
+
+#Errors -----------------------------------------------------------------------------
 
 MacPrecErr= 2*np.finfo(float).eps
 GaussFact = (nE*4*np.pi*w)/1.1
 
-#Primitive Cell --------------------------------------------------------------------------------------------------------
+#Primitive Cell ---------------------------------------------------------------------
 b=nb*c #Size of lattice
-
-# Potential
-V=np.array([1])*(1+0*1j) #np.ones(nb)*(1+0*1j) #Potential vector (without defects)
-# Masses
-Mvec = np.ones(nb) # Mass matrix (without defects)
 M = np.diag(Mvec, 0)
 
-#Super Cell ------------------------------------------------------------------------------------------------------------
+#Super Cell -------------------------------------------------------------------------
 na=n*nb#Number of particles per cell
 a= na*c #Size of lattice
 
@@ -59,6 +75,21 @@ a= na*c #Size of lattice
 Vsc=np.tile(V,n)
 #Masses
 Mvecsc=np.tile(Mvec,n)
+
+def load_balance(n_tasks):
+# Defines the interval each cores needs to compute
+    
+    n_jobs = n_tasks//n_proc
+    balance = n_tasks%n_proc
+
+    if (rank < balance): 
+        i_init = rank*(n_jobs+1)+1
+        i_fin = (rank+1)*(n_jobs+1)
+    else:
+        i_init = balance*(n_jobs+1) + (rank-balance)*(n_jobs)+1
+        i_fin = balance*(n_jobs+1) + (rank-balance+1)*(n_jobs)
+
+    return range(i_init-1, i_fin)
 
 def invCumulFunc(graph,n,occpos,mu,var,x):
     print(occpos,mu,var,x)
@@ -87,117 +118,125 @@ def invCumulFunc(graph,n,occpos,mu,var,x):
 
     return pos
 
-# Defects
-if defects:
-    availpos = np.arange(n)
-    occpos = np.array([])
+if rank == master:
+    # Defects
+    if defects:
+        availpos = np.arange(n)
+        occpos = np.array([])
 
-    for i in range(len(mval)):
+        for i in range(len(mval)):
 
-        if dtype[i] == "ordered":
-            pos = np.arange(i, n, int(1 / DefConc[i]))
+            if dtype[i] == "ordered":
+                pos = np.arange(i, n, int(1 / DefConc[i]))
 
-            for j in range(nb):
-                Mvecsc[nb*pos+j] = mval[i][j]
-                Vsc[nb*pos+j] = kval[i][j]
-
-        if dtype[i] == "random":
-            ndefects = int(DefConc[i] * n)
-            pos = rd.sample(list(availpos),ndefects)
-            pos = np.array(pos)
-
-            for p in pos:
-                availpos = availpos[availpos!=p]
-
-            for j in range(nb):
-                Mvecsc[nb*pos+j] = mval[i][j]
-                Vsc[nb*pos+j] = kval[i][j]
-
-        if dtype[i] == "cluster":
-            ndefects = int(DefConc[i] * n)
-            mu = np.array([])
-            graph = False
-            for k in range(ndefects):
-
-                if k==0:
-                    pos = rd.sample(list(availpos),1)[0]
-                else:
-                    if k == ndefects-1:
-                        graph = True
-                    pos = invCumulFunc(graph,n,occpos,mu,clusterSize[i]**2,rd.random())
-                mu = np.append(mu,pos)
-                occpos = np.append(occpos,pos)
                 for j in range(nb):
                     Mvecsc[nb*pos+j] = mval[i][j]
                     Vsc[nb*pos+j] = kval[i][j]
 
-            for p in occpos:
-                availpos = availpos[availpos != p]
+            if dtype[i] == "random":
+                ndefects = int(DefConc[i] * n)
+                pos = rd.sample(list(availpos),ndefects)
+                pos = np.array(pos)
 
-Msc = np.diag(Mvecsc, 0)
+                for p in pos:
+                    availpos = availpos[availpos!=p]
 
-#Namestamp
+                for j in range(nb):
+                    Mvecsc[nb*pos+j] = mval[i][j]
+                    Vsc[nb*pos+j] = kval[i][j]
 
-if defects:
-    strdefects = "d%s"%('-'.join([str(i) for i in DefConc]))
-    strdefects = strdefects + "_m%s"%('+'.join(['-'.join([str(j) for j in i]) for i in mval]))
-    strdefects = strdefects + "_k%s"%('+'.join(['-'.join([str(j) for j in i]) for i in kval]))
+            if dtype[i] == "cluster":
+                ndefects = int(DefConc[i] * n)
+                mu = np.array([])
+                graph = False
+                for k in range(ndefects):
+
+                    if k==0:
+                        pos = rd.sample(list(availpos),1)[0]
+                    else:
+                        if k == ndefects-1:
+                            graph = True
+                        pos = invCumulFunc(graph,n,occpos,mu,clusterSize[i]**2,rd.random())
+                    mu = np.append(mu,pos)
+                    occpos = np.append(occpos,pos)
+                    for j in range(nb):
+                        Mvecsc[nb*pos+j] = mval[i][j]
+                        Vsc[nb*pos+j] = kval[i][j]
+
+                for p in occpos:
+                    availpos = availpos[availpos != p]
+
+    Msc = np.diag(Mvecsc, 0)
+
+    #Namestamp
+
+    if defects:
+        strdefects = "d%s"%('-'.join([str(i) for i in DefConc]))
+        strdefects = strdefects + "_m%s"%('+'.join(['-'.join([str(j) for j in i]) for i in mval]))
+        strdefects = strdefects + "_k%s"%('+'.join(['-'.join([str(j) for j in i]) for i in kval]))
+    else:
+        strdefects = "d0"
+
+    if gaussian:
+        strgauss = "g"
+    else:
+        strgauss = "ng"
+
+    namestamp = "pm%s" %('-'.join([str(int(i)) for i in Mvec]))
+    namestamp = namestamp + "_k%s" %('-'.join([str(int(i)) for i in np.real(V)]))
+    namestamp = namestamp + strdefects + strgauss
+
+    print(Mvecsc)
+    print(Mvecsc[Mvecsc==2])
+    print(Mvecsc[Mvecsc==3])
+
+    # Solving for supercell at Q=0 -----------------------------------------------------------------------------------------
+
+    # K matrix
+    secdiag = Vsc[0:na - 1]
+    maindiag = np.hstack((-(Vsc[0] + Vsc[na - 1]), -(Vsc[1:na] + Vsc[0:na - 1])))
+    K = (np.diag(secdiag, -1) + np.diag(maindiag, 0) + np.diag(secdiag, 1))
+    K[na - 1, 0] = K[na - 1, 0] + Vsc[na - 1]
+    K[0, na - 1] = K[0, na - 1] + Vsc[na - 1]
+
+    #print(K)
+
+    # System M*w^2*x+Kx=0 => (M^-1*K)x = w^2x
+    sysmat = la.inv(Msc).dot(K)
+
+    print(np.diagonal(sysmat))
+
+    # Solving system
+    omegasqsc, eigenvecsc = la.eigh(-sysmat)
+
+    omegasqsc=np.real(omegasqsc)
+
+    idx = omegasqsc.argsort()
+    omegasqsc = omegasqsc[idx]
+    omegasqsc[omegasqsc<0]=0
+    omegasc = np.sqrt(omegasqsc)
+    eigenvecsc = eigenvecsc[:,idx]
+
+    # Gram-Schmidt Process (modified considering most vectors are orthonormal)
+    eigenvecN = np.array(eigenvecsc)
+    for i in range(na):
+        for j in np.arange(i+1,na):
+            if (abs(omegasc[i] - omegasc[j]) < MacPrecErr):
+                eigenvecN[:, i] = eigenvecN[:, i] - eigenvecsc[:, i].dot(eigenvecN[:, j]) * eigenvecN[:, j]
+        if ((eigenvecN[:, i] != eigenvecsc[:, i]).all):
+            eigenvecN[:, i] = eigenvecN[:, i] / la.norm(eigenvecN[:, i])
+
+    eigenvecsc = np.array(eigenvecN)
 else:
-    strdefects = "d0"
+    eigenvecsc = None
+    omegasc = None
+    
 
-if gaussian:
-    strgauss = "g"
-else:
-    strgauss = "ng"
-
-namestamp = "pm%s" %('-'.join([str(int(i)) for i in Mvec]))
-namestamp = namestamp + "_k%s" %('-'.join([str(int(i)) for i in np.real(V)]))
-namestamp = namestamp + strdefects + strgauss
-
-print(Mvecsc)
-print(Mvecsc[Mvecsc==2])
-print(Mvecsc[Mvecsc==3])
-
-# Solving for supercell at Q=0 -----------------------------------------------------------------------------------------
-
-# K matrix
-secdiag = Vsc[0:na - 1]
-maindiag = np.hstack((-(Vsc[0] + Vsc[na - 1]), -(Vsc[1:na] + Vsc[0:na - 1])))
-K = (np.diag(secdiag, -1) + np.diag(maindiag, 0) + np.diag(secdiag, 1))
-K[na - 1, 0] = K[na - 1, 0] + Vsc[na - 1]
-K[0, na - 1] = K[0, na - 1] + Vsc[na - 1]
-
-#print(K)
-
-# System M*w^2*x+Kx=0 => (M^-1*K)x = w^2x
-sysmat = la.inv(Msc).dot(K)
-
-print(np.diagonal(sysmat))
-
-# Solving system
-omegasqsc, eigenvecsc = la.eigh(-sysmat)
-
-omegasqsc=np.real(omegasqsc)
-
-idx = omegasqsc.argsort()
-omegasqsc = omegasqsc[idx]
-omegasqsc[omegasqsc<0]=0
-omegasc = np.sqrt(omegasqsc)
-eigenvecsc = eigenvecsc[:,idx]
-
-# Gram-Schmidt Process (modified considering most vectors are orthonormal)
-eigenvecN = np.array(eigenvecsc)
-for i in range(na):
-    for j in np.arange(i+1,na):
-        if (abs(omegasc[i] - omegasc[j]) < MacPrecErr):
-            eigenvecN[:, i] = eigenvecN[:, i] - eigenvecsc[:, i].dot(eigenvecN[:, j]) * eigenvecN[:, j]
-    if ((eigenvecN[:, i] != eigenvecsc[:, i]).all):
-        eigenvecN[:, i] = eigenvecN[:, i] / la.norm(eigenvecN[:, i])
-
-eigenvecsc = np.array(eigenvecN)
-
-qdisp=[]
-omegadisp=[]
+eigenvecsc = comm.bcast(eigenvecsc)
+omegasc = comm.bcast(omegasc)
+    
+Local_qdisp=[]
+Local_omegadisp=[]
 tol = omegasc.max()*1.1/(2*(nE-1)) #Tolerence for equality
 
 # Solving for primitive cell at q = Q + G ------------------------------------------------------------------------------
@@ -218,13 +257,14 @@ else:
     Emin = 0
 E=np.linspace(Emin,omegasc.max()*1.1,nE)
 
+Local_range = load_balance(int(n/2)+1)
 
-Sf = np.zeros((nb,nE,int(n/2)+1))
-Sftotal = np.zeros((nE,int(n/2)+1))
+Local_Sf = np.zeros((nb,nE,len(Local_range)))
+Local_Sftotal = np.zeros((nE,len(Local_range)))
 
-t_total_i = time.time()
-
-for iq in range(int(n/2)+1): # Wave vector times lattice vector (1D) [-pi, pi]
+Local_qLoopTimes = []
+                         
+for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-pi, pi]
 
     #timing
     t_q_i = time.time()
@@ -261,17 +301,17 @@ for iq in range(int(n/2)+1): # Wave vector times lattice vector (1D) [-pi, pi]
     eigenvec=np.array(eigenvecN)
 
     # Original band structure
-    qdisp=np.hstack((qdisp,np.ones((1,nb))[0]*q[iq]))
-    omegadisp=np.hstack((omegadisp,np.real(omega)))
+    Local_qdisp=np.hstack((Local_qdisp,np.ones((1,nb))[0]*q[iq]))
+    Local_omegadisp=np.hstack((Local_omegadisp,np.real(omega)))
 
-    t_energy_loop = time.time()
-    t_i_loop = np.zeros(nE)
+    #t_energy_loop = time.time()
+    #t_i_loop = np.zeros(nE)
     deltalist=np.zeros(len(E))
     for iE in range(nE):
 
         # timing
-        t_i_i = time.time()
-        t_l_loop = np.zeros(na)
+        #t_i_i = time.time()
+        #t_l_loop = np.zeros(na)
 
         ############[ SUM ON ALL STATES ]############
 
@@ -297,7 +337,7 @@ for iq in range(int(n/2)+1): # Wave vector times lattice vector (1D) [-pi, pi]
                 ScalarProd = np.zeros(nb)*(1+0*1j)
 #                count[iq,i] = count[iq,i] + 1
                 #timing
-                t_l_i = time.time()
+                #t_l_i = time.time()
 
                 ############[ SCALAR PRODUCT ]############
 
@@ -310,159 +350,175 @@ for iq in range(int(n/2)+1): # Wave vector times lattice vector (1D) [-pi, pi]
 
                 # ////////////[ SCALAR PRODUCT ]////////////
                 for s in range(nb):
-                    Sf[s, iE, iq] = Sf[s, iE, iq] + delta * abs(ScalarProd[s]) ** 2
-                Sftotal[iE, iq] = Sftotal[iE, iq] + delta * abs(np.sum(ScalarProd)) ** 2
+                    Local_Sf[s, iE, jq] = Local_Sf[s, iE, jq] + delta * abs(ScalarProd[s]) ** 2
+                    Local_Sftotal[iE, jq] = Local_Sftotal[iE, jq] + delta * abs(np.sum(ScalarProd)) ** 2
 
                 #timing
-                t_l_loop[i] = t_l_loop[i] + time.time()-t_l_i
+                #t_l_loop[i] = t_l_loop[i] + time.time()-t_l_i
 
             #////////////[ DIRAC DELTA FUNCTION ]////////////
 
         # ////////////[ SUM ON ALL STATES ]////////////
 
         #timing
-        t_i_loop[iE] = t_i_loop[iE]+time.time()-t_i_i
+        #t_i_loop[iE] = t_i_loop[iE]+time.time()-t_i_i
 #        print('Total times for Loop in l=', t_l_loop)
 
     #timing
-    print('Total times for Loop in i=', t_i_loop)
-    print(iq)
-    print('(',iq/(n/2.0)*100.0,'%)')
+    #print('Total times for Loop in i=', t_i_loop)
     t_q_f = time.time()
-    print('Total iq=',t_q_f - t_q_i)
-    print('Energy loop time=',t_q_f-t_energy_loop)
-    print('System solve + GS proces=', -t_q_i + t_energy_loop)
+    Local_qLoopTimes.append(t_q_f - t_q_i)
+    print("Finished %d in core %d in %f seconds"%(iq,rank,t_q_f - t_q_i))
+    #print('Energy loop time=',t_q_f-t_energy_loop)
+    #print('System solve + GS proces=', -t_q_i + t_energy_loop)
 
-    print('-------------------------------------------------')
+    #print('-------------------------------------------------')
 
-t_total_f = time.time()
-print(t_total_f - t_total_i)
 
-plt.figure()
-plt.plot(qdisp,omegadisp,'.')
-plt.savefig(folder+"primitive_band_"+namestamp+".png")
+Global_qdisp = comm.gather(Local_qdisp)
+Global_omegadisp = comm.gather(Local_omegadisp)
+Global_Sf = comm.gather(Local_Sf)
+Global_Sftotal = comm.gather(Local_Sftotal)
+qLoopTimes = comm.gather(Local_qLoopTimes)
 
-Sf[Sf<MacPrecErr]=0
+if rank == master:
 
-plt.figure()
-plt.imshow(Sftotal, interpolation='None', origin='lower',
-                cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
-plt.ylabel(r'Angular Frequency($\omega$)')
-plt.xlabel('Wave vector(q)')
-plt.title("Total band")
-plt.savefig(folder+"spectral_map_"+namestamp+".png")
-
-plt.figure()
-plt.imshow(Sftotal-np.sum(Sf,0), interpolation='None', origin='lower',
-                cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
-plt.ylabel(r'Angular Frequency($\omega$)')
-plt.xlabel('Wave vector(q)')
-plt.title("Cross terms")
-plt.savefig(folder+"cross_spectral_map_"+namestamp+".png")
-
-for s in range(nb):
+    qdisp = np.concatenate(Global_qdisp)
+    omegadisp = np.concatenate(Global_omegadisp)
+    Sf = np.concatenate(Global_Sf,2)
+    Sftotal = np.concatenate(Global_Sftotal,1)
+    
     plt.figure()
-    #plt.imshow(Sf, aspect=1, interpolation='none', cmap=plt.get_cmap('Greys'),
-    #                origin='lower', extent=[q.min(), q.max(), E.min(), E.max()],
-    #                vmax=1, vmin=0)
-    # inter: lanczos
-    plt.imshow(Sf[s,:,:], interpolation='None', origin='lower',
+    plt.plot(qdisp,omegadisp,'.')
+    plt.savefig(folder+"primitive_band_"+namestamp+".png")
+
+    Sf[Sf<MacPrecErr]=0
+
+    plt.figure()
+    plt.imshow(Sftotal, interpolation='None', origin='lower',
                     cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
     plt.ylabel(r'Angular Frequency($\omega$)')
+    plt.xlabel('Wave vector(q)')
+    plt.title("Total band")
+    plt.savefig(folder+"spectral_map_"+namestamp+".png")
+
+    plt.figure()
+    plt.imshow(Sftotal-np.sum(Sf,0), interpolation='None', origin='lower',
+                    cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
+    plt.ylabel(r'Angular Frequency($\omega$)')
+    plt.xlabel('Wave vector(q)')
+    plt.title("Cross terms")
+    plt.savefig(folder+"cross_spectral_map_"+namestamp+".png")
+
+    for s in range(nb):
+        plt.figure()
+        #plt.imshow(Sf, aspect=1, interpolation='none', cmap=plt.get_cmap('Greys'),
+        #                origin='lower', extent=[q.min(), q.max(), E.min(), E.max()],
+        #                vmax=1, vmin=0)
+        # inter: lanczos
+        plt.imshow(Sf[s,:,:], interpolation='None', origin='lower',
+                        cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
+        plt.ylabel(r'Angular Frequency($\omega$)')
+        plt.xlabel('Wave vector (q)')
+        plt.title("Band %d"%s)
+        plt.savefig(folder+"band_%d_spectral_map_"%s+namestamp+".png")
+    print('Validation')
+    print('Total')
+    print(np.sum(Sftotal,0))
+    print('Crossterms')
+    print(np.sum(Sftotal-np.sum(Sf,0),0))
+    for s in range(nb):
+        print('Band %d'%s)
+        print(np.sum(Sf[s,:,:],0))
+
+    print('Max Error')
+    MaxErr = np.max(abs(nb-np.sum(Sftotal,0)))
+    print(MaxErr)
+    print('Gaussian Factor')
+    print(GaussFact)
+
+    #Display
+    plt.figure()
+    plt.plot(E, Sf[:,:, 0].T, '.-')
+    ax = plt.gca()
+    ymin, ymax = ax.get_ylim()
+    deltalist = deltalist / max(deltalist)
+    for npE in range(len(E)):
+        ax.vlines(x=E[npE], ymin=ymin, ymax=ymax, color='r', alpha=deltalist[npE])
+    plt.ylim([ymin, ymax])
+    plt.plot(E,deltalist*ymax, color='r')
+
+    plt.savefig(folder+"slice_0_"+namestamp+".png")
+
+    #lifetime calculations -------------------------------------------------------------------------------------------------
+
+    EAvg = np.zeros((nb, int(n / 2) + 1))
+    EsqAvg = np.zeros((nb, int(n / 2) + 1))
+    Var = np.zeros((nb, int(n / 2) + 1))
+
+
+    for s in range(nb):
+        for iE in range(nE):
+            EAvg[s,:] = EAvg[s,:] + E[iE]*Sf[s,iE,:]
+            EsqAvg[s,:] = EsqAvg[s,:] + (E[iE]**2)*Sf[s,iE,:]
+        EAvg[s,:] = EAvg[s,:]/np.sum(Sf[s, :, :], 0)
+        EsqAvg[s,:] = EsqAvg[s,:]/np.sum(Sf[s, :, :], 0)
+
+    for s in range(nb):
+        for iE in range(nE):
+            Var[s,:] = Var[s,:] + (E[iE]-EAvg[s,:])**2*Sf[s,iE,:]
+        Var[s,:] = Var[s,:]/np.sum(Sf[s, :, :], 0)
+
+    Var2 = EsqAvg-EAvg**2
+    DeltaE = np.sqrt(Var)
+    Tau = 1/DeltaE
+
+    # Display
+    plt.figure()
+    plt.plot(q,EAvg.T)
+    for s in range(nb):
+        plt.fill_between(q, EAvg[s, :] - DeltaE[s, :], EAvg[s, :] + DeltaE[s, :],color='#6E6E6E',alpha=0.2)
+    plt.ylabel(r'Angular Frequency($\omega$)')
     plt.xlabel('Wave vector (q)')
-    plt.title("Band %d"%s)
-    plt.savefig(folder+"band_%d_spectral_map_"%s+namestamp+".png")
-print('Validation')
-print('Total')
-print(np.sum(Sftotal,0))
-print('Crossterms')
-print(np.sum(Sftotal-np.sum(Sf,0),0))
-for s in range(nb):
-    print('Band %d'%s)
-    print(np.sum(Sf[s,:,:],0))
+    plt.title("Average frequency and standard deviation")
+    #plt.savefig(folder+"spectral_map_"+namestamp+".png")
 
-print('Max Error')
-MaxErr = np.max(abs(nb-np.sum(Sftotal,0)))
-print(MaxErr)
-print('Gaussian Factor')
-print(GaussFact)
+    plt.figure()
+    plt.plot(q,Tau.T)
+    plt.ylabel(r'Lifetime($\tau$)')
+    plt.xlabel('Wave vector (q)')
+    plt.title("Lifetime")
+    #plt.savefig(folder+"spectral_map_"+namestamp+".png")
 
-#Display
-plt.figure()
-plt.plot(E, Sf[:,:, 0].T, '.-')
-ax = plt.gca()
-ymin, ymax = ax.get_ylim()
-deltalist = deltalist / max(deltalist)
-for npE in range(len(E)):
-    ax.vlines(x=E[npE], ymin=ymin, ymax=ymax, color='r', alpha=deltalist[npE])
-plt.ylim([ymin, ymax])
-plt.plot(E,deltalist*ymax, color='r')
+    # Lattice Thermal Conductivity -----------------------------------------------------------------------------------------
 
-plt.savefig(folder+"slice_0_"+namestamp+".png")
+    dq = 2*np.pi/a
+    bar = hbar_kb*EAvg/T
+    C=np.ones((nb,int(n / 2) + 1))
+    C[bar>=MacPrecErr] = bar[bar>=MacPrecErr]**2*np.exp(bar[bar>=MacPrecErr])/(np.exp(bar[bar>=MacPrecErr])-1)**2
+    v = np.zeros((nb,int(n / 2) + 1))
+    v[:,1:-1] = 1/dq*1/2*(EAvg[:,2:]-EAvg[:,:-2])
+    v[:,0] = 1/dq*(2*EAvg[:,1]-3/2*EAvg[:,0]-1/2*EAvg[:,2])
+    v[:,-1] = 1/dq*(-2*EAvg[:,-2]+3/2*EAvg[:,-1]+1/2*EAvg[:,-3])
 
-#lifetime calculations -------------------------------------------------------------------------------------------------
+    k = dq*np.sum(C*v**2*Tau,1)
 
-EAvg = np.zeros((nb, int(n / 2) + 1))
-EsqAvg = np.zeros((nb, int(n / 2) + 1))
-Var = np.zeros((nb, int(n / 2) + 1))
+    print("##################################################")
+    print("Total Lattice Thermal Conductivity:", np.sum(k))
+    for s in range(nb):
+        print("Band %d contribution:"%s, k[s])
+    print("--------------------------------------------------")
+    print("Prameters:")
+    print("Specific Heat (C):", C)
+    print("Group velocity (v):", v)
+    print("Relaxation Time (Tau):", Tau)
+    print("##################################################")
 
+    t_total_f = time.time()
 
-for s in range(nb):
-    for iE in range(nE):
-        EAvg[s,:] = EAvg[s,:] + E[iE]*Sf[s,iE,:]
-        EsqAvg[s,:] = EsqAvg[s,:] + (E[iE]**2)*Sf[s,iE,:]
-    EAvg[s,:] = EAvg[s,:]/np.sum(Sf[s, :, :], 0)
-    EsqAvg[s,:] = EsqAvg[s,:]/np.sum(Sf[s, :, :], 0)
+    print('done')
+    print('Total elapsed time:', t_total_f-t_total_i)
+    
+    plt.show()
 
-for s in range(nb):
-    for iE in range(nE):
-        Var[s,:] = Var[s,:] + (E[iE]-EAvg[s,:])**2*Sf[s,iE,:]
-    Var[s,:] = Var[s,:]/np.sum(Sf[s, :, :], 0)
-
-Var2 = EsqAvg-EAvg**2
-DeltaE = np.sqrt(Var)
-Tau = 1/DeltaE
-
-# Display
-plt.figure()
-plt.plot(q,EAvg.T)
-for s in range(nb):
-    plt.fill_between(q, EAvg[s, :] - DeltaE[s, :], EAvg[s, :] + DeltaE[s, :],color='#6E6E6E',alpha=0.2)
-plt.ylabel(r'Angular Frequency($\omega$)')
-plt.xlabel('Wave vector (q)')
-plt.title("Average frequency and standard deviation")
-#plt.savefig(folder+"spectral_map_"+namestamp+".png")
-
-plt.figure()
-plt.plot(q,Tau.T)
-plt.ylabel(r'Lifetime($\tau$)')
-plt.xlabel('Wave vector (q)')
-plt.title("Lifetime")
-#plt.savefig(folder+"spectral_map_"+namestamp+".png")
-
-# Lattice Thermal Conductivity -----------------------------------------------------------------------------------------
-
-dq = 2*np.pi/a
-bar = hbar_kb*EAvg/T
-C=np.ones((nb,int(n / 2) + 1))
-C[bar>=MacPrecErr] = bar[bar>=MacPrecErr]**2*np.exp(bar[bar>=MacPrecErr])/(np.exp(bar[bar>=MacPrecErr])-1)**2
-v = np.zeros((nb,int(n / 2) + 1))
-v[:,1:-1] = 1/dq*1/2*(EAvg[:,2:]-EAvg[:,:-2])
-v[:,0] = 1/dq*(2*EAvg[:,1]-3/2*EAvg[:,0]-1/2*EAvg[:,2])
-v[:,-1] = 1/dq*(-2*EAvg[:,-2]+3/2*EAvg[:,-1]+1/2*EAvg[:,-3])
-
-k = dq*np.sum(C*v**2*Tau,1)
-
-print("##################################################")
-print("Total Lattice Thermal Conductivity:", np.sum(k))
-for s in range(nb):
-    print("Band %d contribution:"%s, k[s])
-print("--------------------------------------------------")
-print("Prameters:")
-print("Specific Heat (C):", C)
-print("Group velocity (v):", v)
-print("Relaxation Time (Tau):", Tau)
-print("##################################################")
-
-plt.show()
-print('done')
+                         
