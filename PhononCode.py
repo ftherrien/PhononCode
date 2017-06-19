@@ -1,12 +1,46 @@
 import numpy as np
+import matplotlib
 from numpy import linalg as la
 import matplotlib.pyplot as plt
 import scipy.fftpack
 import time
 import random as rd
+import os, os.path
+import argparse
 from mpi4py import MPI
 
-plt.close("all")
+def cell(s):
+    if (s[0]=="[") and (s[-1]=="]"):
+        try:
+            s=s[1:-1]
+            tup = map(float, s.split(','))
+            return list(tup)
+        except:
+            raise argparse.ArgumentTypeError("Should be [x,y,z,...] of size nb")
+    else:
+        print('popo')
+        raise argparse.ArgumentTypeError("Should be [x,y,z]")
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primittive cell")
+parser.add_argument("-n","--scsize",dest="n", type=int, default=100, help="Number of primittive cell in super cell")
+parser.add_argument("-E","--energy",dest="nE", type=int, default=600, help="Number of energy values on scale")
+parser.add_argument("-T","--temp",dest="T", type=float, default=300, help="Temperature")
+parser.add_argument("-V","--potentials",dest="V", type=cell, default=[1], help="List of potential strenghts of size nb")
+parser.add_argument("-M","--masses",dest="Mvec", type=cell, default=[1], help="List of masses of size nb")
+parser.add_argument("-g","--noGauss",dest="gaussian", action="store_false", default=True, help="Energy bands with minimum gaussian width")
+parser.add_argument("-u","--cutOffErr",dest="CutOffErr", type=float, default=10**-4, help="Value at witch a band is considered to be negligable")
+parser.add_argument("-w","--width",dest="w", default=-1, type=float, help="Standard deviation (width) of gaussian")
+parser.add_argument("-d","--defects",dest="defects", action="store_true", default=False, help="Adds defects in super cell")
+parser.add_argument("-t","--dtype",dest="dtype",nargs='+', type=str, default=["random"], help="Available types: ordered, random, cluster")
+parser.add_argument("-s","--cluster",dest="clusterSize",nargs='+',type=float, default=[3], help="Size factor for clustered defects")
+parser.add_argument("-m","--dmasses",dest="mval",nargs='+',type=cell, default=[[2]], help="Mass of defects")
+parser.add_argument("-v","--dpotentials",dest="kval",nargs='+',type=cell, default=[[2]], help="Potential strenghts of defects")
+parser.add_argument("-c","--defConc",dest="DefConc",nargs='+',type=float, default=[[0.05]], help="Concentration of defect")
+parser.add_argument("-o","--out",dest="folder",type=str, default="images", help="Output folder for images")
+parser.add_argument("-i","--display",dest="disp",action="store_true", default=False, help="Display generated plots plots")
+
+options = parser.parse_args()
 
 # Initial calls
 comm = MPI.COMM_WORLD
@@ -14,39 +48,50 @@ master = 0
 n_proc = comm.Get_size()
 rank = comm.Get_rank()
 
+# Display initialisation
+
+if options.disp:
+    plt.close("all")
+    plt.ioff
+else:
+    matplotlib.use('Agg')
+
 ## PARAMETERS #######################################################################
 c=1 #Interatomic spacing
-nb=1 #Number of particles per primitive cell
-n=100 #number of primitive cell in super cell
-nE = 600 #Number of energy values on scale
+nb=options.nb #Number of particles per primitive cell
+n=options.n #number of primitive cell in super cell
+nE = options.nE #Number of energy values on scale
 Nc=1 #Number of Sc in Von Karman cell
-T = 300 #Temperature in Kelvin
+T = options.T #Temperature in Kelvin
 
 # Potential
-V=np.array([1])*(1+0*1j) #Potential vector (without defects)
+V=np.array(options.V)*(1+0*1j) #Potential vector (without defects)
 # Masses
-Mvec = np.ones(nb) # Mass vector (without defects)
+Mvec = np.array(options.Mvec) # Mass vector (without defects)
 
-gaussian = True # Gaussian minimal width
-CutOffErr=10**-4 # Cuttoff value for energy difference
-w =  1/n # width of gaussian in fraction of the max energy
+gaussian = options.gaussian # Gaussian minimal width
+CutOffErr=options.CutOffErr # Cuttoff value for energy difference
+if options.w == -1:
+    w = 1/n # width of gaussian in fraction of the max energy
+else:
+    w = options.w
 # Good width: 0.035
 
-defects = True
+defects = options.defects
 #Presence of defects
 # dtypes:
 # ordered: will repeat defect periodically to obtain DefConc, if multiple defect types are specified they will be
 # stacked next to each other and will have the same concentration other concentrations will be ignored
 # random: defects are scattered randomly in the supercell, different types of defects can have different concentrations
 # cluster: defects are have higher probability to be near another defect, the location of the first defect is random. The clusterSize variable controls the standanrd deviation of the density of probability
-dtype = ["cluster","random"]
-clusterSize = [3,3]
-mval = np.array([[2],[3]])
-kval = np.array([[2],[3]])
-DefConc = [0.05,0.1] #concentratation of defects
+dtype = options.dtype
+clusterSize = options.clusterSize
+mval = np.array(options.mval)
+kval = np.array(options.kval)
+DefConc = options.DefConc #concentratation of defects
 
 #Images output folder
-folder = "images/"
+folder = options.folder+"/"
 
 #Constant
 hbar_kb=7.63824*10**(-12) #second kelvins
@@ -187,8 +232,7 @@ if rank == master:
     namestamp = namestamp + strdefects + strgauss
 
     print(Mvecsc)
-    print(Mvecsc[Mvecsc==2])
-    print(Mvecsc[Mvecsc==3])
+    print(Vsc)
 
     # Solving for supercell at Q=0 -----------------------------------------------------------------------------------------
 
@@ -203,8 +247,6 @@ if rank == master:
 
     # System M*w^2*x+Kx=0 => (M^-1*K)x = w^2x
     sysmat = la.inv(Msc).dot(K)
-
-    print(np.diagonal(sysmat))
 
     # Solving system
     omegasqsc, eigenvecsc = la.eigh(-sysmat)
@@ -263,6 +305,8 @@ Local_Sf = np.zeros((nb,nE,len(Local_range)))
 Local_Sftotal = np.zeros((nE,len(Local_range)))
 
 Local_qLoopTimes = []
+
+t_total_q = time.time()
                          
 for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-pi, pi]
 
@@ -382,6 +426,9 @@ Global_Sftotal = comm.gather(Local_Sftotal)
 qLoopTimes = comm.gather(Local_qLoopTimes)
 
 if rank == master:
+
+    if (not os.path.exists(folder)):
+        os.mkdir(folder)
 
     qdisp = np.concatenate(Global_qdisp)
     omegadisp = np.concatenate(Global_omegadisp)
@@ -517,8 +564,11 @@ if rank == master:
     t_total_f = time.time()
 
     print('done')
+    print('Sequential start time', t_total_f-t_q_f)
+    print('Sequential end time',t_total_q - t_total_i)
     print('Total elapsed time:', t_total_f-t_total_i)
-    
+
+if options.disp:
     plt.show()
 
                          
