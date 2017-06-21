@@ -399,7 +399,7 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
                 # ////////////[ SCALAR PRODUCT ]////////////
                 for s in range(nb):
                     Local_Sf[s, iE, jq] = Local_Sf[s, iE, jq] + delta * abs(ScalarProd[s]) ** 2
-                    Local_Sftotal[iE, jq] = Local_Sftotal[iE, jq] + delta * abs(np.sum(ScalarProd)) ** 2
+                Local_Sftotal[iE, jq] = Local_Sftotal[iE, jq] + delta * abs(np.sum(ScalarProd)) ** 2
 
                 #timing
                 #t_l_loop[i] = t_l_loop[i] + time.time()-t_l_i
