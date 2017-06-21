@@ -249,7 +249,7 @@ if rank == master:
     sysmat = la.inv(Msc).dot(K)
 
     # Solving system
-    omegasqsc, eigenvecsc = la.eigh(-sysmat)
+    omegasqsc, eigenvecsc = la.eig(-sysmat)
 
     omegasqsc=np.real(omegasqsc)
 
@@ -264,7 +264,7 @@ if rank == master:
     for i in range(na):
         for j in np.arange(i+1,na):
             if (abs(omegasc[i] - omegasc[j]) < MacPrecErr):
-                eigenvecN[:, i] = eigenvecN[:, i] - eigenvecsc[:, i].dot(eigenvecN[:, j]) * eigenvecN[:, j]
+                eigenvecN[:, i] = eigenvecN[:, i] - eigenvecsc[:, i].dot(np.conj(eigenvecN[:, j])) * eigenvecN[:, j]
         if ((eigenvecN[:, i] != eigenvecsc[:, i]).all):
             eigenvecN[:, i] = eigenvecN[:, i] / la.norm(eigenvecN[:, i])
 
@@ -324,7 +324,12 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
     sysmat = la.inv(M).dot(K)
 
     #Solving system
-    omegasq, eigenvec = la.eigh(-sysmat)
+    omegasq, eigenvec = la.eig(-sysmat)
+
+    #Order the bands
+    idx = omegasq.argsort()
+    omegasq = omegasq[idx]
+    eigenvec = eigenvec[:,idx]
 
     omegasq[omegasq < 0] = 0
     omega=np.sqrt(omegasq)
@@ -388,9 +393,8 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
                 # sum l=1->Nt on all space for the scalar product (in this case Nc = 1 => Nt = na)
                 for l in range(Nc*na):
                     # sum s=1->nb on all solutions of the primittive cell
-                    # TODO: Change np.floor(l/b) to (l/nb)
                     for s in range(nb):
-                        ScalarProd[s] = ScalarProd[s] + 1/Nc*np.conj(eigenvecsc[l%na,i])*1/np.sqrt(n)*eigenvec[l%nb,s]*np.exp(-1j*q[iq]*np.floor(l/nb)*b)
+                        ScalarProd[s] = ScalarProd[s] + 1/Nc*np.conj(eigenvecsc[l%na,i])*1/np.sqrt(n)*eigenvec[l%nb,s]*np.exp(-1j*q[iq]*(l//nb)*b)
 
                 # ////////////[ SCALAR PRODUCT ]////////////
                 for s in range(nb):
