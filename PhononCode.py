@@ -1,13 +1,13 @@
 import numpy as np
 import matplotlib
 from numpy import linalg as la
-import matplotlib.pyplot as plt
 import scipy.fftpack
 import time
 import random as rd
 import os, os.path
 import argparse
 from mpi4py import MPI
+import sys
 
 def cell(s):
     if (s[0]=="[") and (s[-1]=="]"):
@@ -51,10 +51,13 @@ rank = comm.Get_rank()
 # Display initialisation
 
 if options.disp:
+    import matplotlib.pyplot as plt
     plt.close("all")
     plt.ioff
 else:
     matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
 
 ## PARAMETERS #######################################################################
 c=1 #Interatomic spacing
@@ -92,12 +95,21 @@ DefConc = options.DefConc #concentratation of defects
 
 #Images output folder
 folder = options.folder+"/"
+namestamp = "phon"
 
 #Constant
 hbar_kb=7.63824*10**(-12) #second kelvins
 
 # There should be no need to modify anything after this line
 ## PARAMETERS #######################################################################
+
+if (not os.path.exists(folder)):
+    os.mkdir(folder)
+
+#Writting PARAM.out
+f = open(folder+"PARAM.out", 'w')
+print(options,file=f)
+f.close()
 
 #Timing
 if rank==master:
@@ -171,65 +183,50 @@ if rank == master:
 
         for i in range(len(mval)):
 
-            if dtype[i] == "ordered":
-                pos = np.arange(i, n, int(1 / DefConc[i]))
+            ndefects = int(DefConc[i] * n)
+            if ndefects == 0:
+                print('WARNING: The specified defect concentration is too low for the size of the super cell: there is no defect of type %d'%(i+1),file=sys.stderr)
+            else:
+                if dtype[i] == "ordered":
+                    pos = np.arange(i, n, int(1 / DefConc[i]))
 
-                for j in range(nb):
-                    Mvecsc[nb*pos+j] = mval[i][j]
-                    Vsc[nb*pos+j] = kval[i][j]
-
-            if dtype[i] == "random":
-                ndefects = int(DefConc[i] * n)
-                pos = rd.sample(list(availpos),ndefects)
-                pos = np.array(pos)
-
-                for p in pos:
-                    availpos = availpos[availpos!=p]
-
-                for j in range(nb):
-                    Mvecsc[nb*pos+j] = mval[i][j]
-                    Vsc[nb*pos+j] = kval[i][j]
-
-            if dtype[i] == "cluster":
-                ndefects = int(DefConc[i] * n)
-                mu = np.array([])
-                graph = False
-                for k in range(ndefects):
-
-                    if k==0:
-                        pos = rd.sample(list(availpos),1)[0]
-                    else:
-                        if k == ndefects-1:
-                            graph = True
-                        pos = invCumulFunc(graph,n,occpos,mu,clusterSize[i]**2,rd.random())
-                    mu = np.append(mu,pos)
-                    occpos = np.append(occpos,pos)
                     for j in range(nb):
                         Mvecsc[nb*pos+j] = mval[i][j]
                         Vsc[nb*pos+j] = kval[i][j]
 
-                for p in occpos:
-                    availpos = availpos[availpos != p]
+                if dtype[i] == "random":
+                    pos = rd.sample(list(availpos),ndefects)
+                    pos = np.array(pos)
+
+                    for p in pos:
+                        availpos = availpos[availpos!=p]
+
+                    for j in range(nb):
+                        Mvecsc[nb*pos+j] = mval[i][j]
+                        Vsc[nb*pos+j] = kval[i][j]
+
+                if dtype[i] == "cluster":
+                    mu = np.array([])
+                    graph = False
+                    for k in range(ndefects):
+
+                        if k==0:
+                            pos = rd.sample(list(availpos),1)[0]
+                        else:
+                            if k == ndefects-1:
+                                graph = True
+                            pos = invCumulFunc(graph,n,occpos,mu,clusterSize[i]**2,rd.random())
+                        mu = np.append(mu,pos)
+                        occpos = np.append(occpos,pos)
+                        
+                        for j in range(nb):
+                            Mvecsc[nb*pos+j] = mval[i][j]
+                            Vsc[nb*pos+j] = kval[i][j]
+
+                    for p in occpos:
+                        availpos = availpos[availpos != p]
 
     Msc = np.diag(Mvecsc, 0)
-
-    #Namestamp
-
-    if defects:
-        strdefects = "d%s"%('-'.join([str(i) for i in DefConc]))
-        strdefects = strdefects + "_m%s"%('+'.join(['-'.join([str(j) for j in i]) for i in mval]))
-        strdefects = strdefects + "_k%s"%('+'.join(['-'.join([str(j) for j in i]) for i in kval]))
-    else:
-        strdefects = "d0"
-
-    if gaussian:
-        strgauss = "g"
-    else:
-        strgauss = "ng"
-
-    namestamp = "pm%s" %('-'.join([str(int(i)) for i in Mvec]))
-    namestamp = namestamp + "_k%s" %('-'.join([str(int(i)) for i in np.real(V)]))
-    namestamp = namestamp + strdefects + strgauss
 
     print(Mvecsc)
     print(Vsc)
@@ -431,9 +428,6 @@ qLoopTimes = comm.gather(Local_qLoopTimes)
 
 if rank == master:
 
-    if (not os.path.exists(folder)):
-        os.mkdir(folder)
-
     qdisp = np.concatenate(Global_qdisp)
     omegadisp = np.concatenate(Global_omegadisp)
     Sf = np.concatenate(Global_Sf,2)
@@ -553,9 +547,10 @@ if rank == master:
     v[:,-1] = 1/dq*(-2*EAvg[:,-2]+3/2*EAvg[:,-1]+1/2*EAvg[:,-3])
 
     k = dq*np.sum(C*v**2*Tau,1)
+    LTC = np.sum(k)
 
     print("##################################################")
-    print("Total Lattice Thermal Conductivity:", np.sum(k))
+    print("Total Lattice Thermal Conductivity:", LTC)
     for s in range(nb):
         print("Band %d contribution:"%s, k[s])
     print("--------------------------------------------------")
@@ -564,6 +559,18 @@ if rank == master:
     print("Group velocity (v):", v)
     print("Relaxation Time (Tau):", Tau)
     print("##################################################")
+
+    # Writting to file
+    f = open('PHONON.out', 'a')
+    printdtype = ' '.join([str(i) for i in dtype])
+    printclusterSize = ' '.join([str(i) for i in clusterSize])
+    printdefconc = ' '.join([str(i) for i in DefConc])
+    printmass = '-'.join([str(i) for i in Mvec])
+    printpot = '-'.join([str(i) for i in np.real(V)])
+    printdpot = ' '.join(['-'.join([str(j) for j in i]) for i in kval])
+    printdmass = ' '.join(['-'.join([str(j) for j in i]) for i in mval])
+    print(printmass,printpot,printdefconc,printdtype,printclusterSize,printdpot,printdmass,LTC, file=f)
+    f.close
 
     t_total_f = time.time()
 
@@ -574,5 +581,3 @@ if rank == master:
 
 if options.disp:
     plt.show()
-
-                         
