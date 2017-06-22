@@ -1,0 +1,10 @@
+#!/bin/bash
+#PBS -N TheCOUP
+#PBS -j oe
+#PBS -l feature=24core
+#PBS -l nodes=5:ppn=24
+#PBS -q short
+#PBS -A NRELMatDB
+#PBS -l walltime=0:10:00
+
+mpirun -np 51 python3 PhononCode.py -n 100 -w 0.02 -d -t cluster -v [1.1] -m [1] -c 0.1 -o testrun

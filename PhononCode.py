@@ -102,17 +102,16 @@ hbar_kb=7.63824*10**(-12) #second kelvins
 
 # There should be no need to modify anything after this line
 ## PARAMETERS #######################################################################
-
-if (not os.path.exists(folder)):
-    os.mkdir(folder)
-
-#Writting PARAM.out
-f = open(folder+"PARAM.out", 'w')
-print(options,file=f)
-f.close()
-
-#Timing
 if rank==master:
+    if (not os.path.exists(folder)):
+        os.mkdir(folder)
+
+    # Writting PARAM.out
+    f = open(folder+"PARAM.out", 'w')
+    print(options,file=f)
+    f.close()
+
+    # Timing
     t_total_i = time.time()
 
 #Errors -----------------------------------------------------------------------------
@@ -148,7 +147,7 @@ def load_balance(n_tasks):
 
     return range(i_init-1, i_fin)
 
-def invCumulFunc(graph,n,occpos,mu,var,x):
+def invCumulFunc(folder,namestamp,graph,n,occpos,mu,var,x):
     print(occpos,mu,var,x)
     CumulFunc = np.zeros(n)
     DensProb = np.zeros(n)
@@ -172,6 +171,10 @@ def invCumulFunc(graph,n,occpos,mu,var,x):
         oridens = oridens / sum(oridens)
         ax.bar(np.arange(n), oridens, color='r', alpha=0.3)
         ax.bar(np.arange(n), DensProb, alpha=0.3)
+        plt.ylabel('Density of probability')
+        plt.xlabel('Position in supercell')
+        plt.title("Density of probability for clustered defects")
+        plt.savefig(folder+"defects_"+namestamp+".png")
 
     return pos
 
@@ -215,7 +218,7 @@ if rank == master:
                         else:
                             if k == ndefects-1:
                                 graph = True
-                            pos = invCumulFunc(graph,n,occpos,mu,clusterSize[i]**2,rd.random())
+                            pos = invCumulFunc(folder,namestamp,graph,n,occpos,mu,clusterSize[i]**2,rd.random())
                         mu = np.append(mu,pos)
                         occpos = np.append(occpos,pos)
                         
@@ -229,7 +232,7 @@ if rank == master:
     Msc = np.diag(Mvecsc, 0)
 
     print(Mvecsc)
-    print(Vsc)
+    print(np.real(Vsc))
 
     # Solving for supercell at Q=0 -----------------------------------------------------------------------------------------
 
@@ -434,7 +437,11 @@ if rank == master:
     Sftotal = np.concatenate(Global_Sftotal,1)
     
     plt.figure()
-    plt.plot(qdisp,omegadisp,'.')
+    plt.plot(qdisp,omegadisp)
+    plt.ylabel(r'Angular Frequency($\omega$)')
+    plt.xlabel('Wave vector(q)')
+    plt.title("Primitive cell band structure")
+
     plt.savefig(folder+"primitive_band_"+namestamp+".png")
 
     Sf[Sf<MacPrecErr]=0
@@ -526,14 +533,14 @@ if rank == master:
     plt.ylabel(r'Angular Frequency($\omega$)')
     plt.xlabel('Wave vector (q)')
     plt.title("Average frequency and standard deviation")
-    #plt.savefig(folder+"spectral_map_"+namestamp+".png")
+    plt.savefig(folder+"avg_std_"+namestamp+".png")
 
     plt.figure()
     plt.plot(q,Tau.T)
     plt.ylabel(r'Lifetime($\tau$)')
     plt.xlabel('Wave vector (q)')
     plt.title("Lifetime")
-    #plt.savefig(folder+"spectral_map_"+namestamp+".png")
+    plt.savefig(folder+"lifetime_"+namestamp+".png")
 
     # Lattice Thermal Conductivity -----------------------------------------------------------------------------------------
 
