@@ -10,6 +10,7 @@ The code is parallelizable up to n the number of primittive cell in the super ce
 
 Requires: numpy, matplotlib, mpi4py, scipy
 
+
 Usage: PhononCode.py [-h] [-b NB] [-n N] [-E NE] [-T T] [-V V] [-M MVEC] [-g]
                      [-u CUTOFFERR] [-w W] [-d] [-t DTYPE [DTYPE ...]]
                      [-s CLUSTERSIZE [CLUSTERSIZE ...]] [-m MVAL [MVAL ...]]
