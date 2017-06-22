@@ -2,7 +2,11 @@
 
 Calculates Lattice Thermal Conductivity and band structure of an arbitrary 1D chain of atoms with arbitrary defect type, concentration and distribution.
 
-The code is parallelizable up to n the number of primittive cell in the super cell. 
+The PHONON.out file contains one line information about the run. It will not be overwritten by each run, it is meant to be able to plot the results.
+
+The PARAM.out contains all the parameters of the run that created its parent folder.
+
+The code is parallelizable up to n the number of primittive cell in the super cell.
 
 Requires: numpy, matplotlib, mpi4py, scipy
 
@@ -46,7 +50,7 @@ Serial call:
 python3 PhononCode.py -n 50 -d -t random -v [2] -c 0.01 -o run1
 
 Parallel call:
-mpiexec -n 4 python3 PhononCode.py -n 50 -d -t random -v [2] -c 0.01 -o run1
+mpiexec -n 4 python3 PhononCode.py -b 2 -V [1,1] -M [1,1] -n 20 -d -t random cluster -s 3 3 -v [2,2] [2,1] -m [1,1] [1,1] -c 0.01 0.1 -o run1 -i
 
 
 
