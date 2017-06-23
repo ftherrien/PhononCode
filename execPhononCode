@@ -1,10 +1,24 @@
 #!/bin/bash
 #PBS -N TheCOUP
 #PBS -j oe
-#PBS -l feature=24core
+#PBS -l feature=haswell
 #PBS -l nodes=5:ppn=24
 #PBS -q short
 #PBS -A NRELMatDB
-#PBS -l walltime=0:10:00
+#PBS -l walltime=03:00:00
 
-mpirun -np 51 python3 PhononCode.py -n 100 -w 0.02 -d -t cluster -v [1.1] -m [1] -c 0.1 -o testrun
+mv PHONON.out PHONON.out.old
+
+mpirun -np 101 python3 PhononCode.py -n 200 -w 0.02 -o run_0
+for s in 3 9 27
+do
+    for i in $(seq 10)
+    do
+	for j in $(seq 10)
+	do
+	    c=$(echo "0.01*${i}" | bc -l)
+	    v=$(echo "0.2*${j}" | bc -l)
+	    mpirun -np 101 python3 PhononCode.py -n 200 -w 0.02 -d -t cluster -s ${s} -v [${v}] -m [1] -c ${c} -o run2_${i}.${j} > run2_${s}${i}.${j}.log
+	done
+    done
+done

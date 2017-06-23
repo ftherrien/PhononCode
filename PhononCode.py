@@ -36,7 +36,7 @@ parser.add_argument("-t","--dtype",dest="dtype",nargs='+', type=str, default=["r
 parser.add_argument("-s","--cluster",dest="clusterSize",nargs='+',type=float, default=[3], help="Size factor for clustered defects")
 parser.add_argument("-m","--dmasses",dest="mval",nargs='+',type=cell, default=[[2]], help="Mass of defects")
 parser.add_argument("-v","--dpotentials",dest="kval",nargs='+',type=cell, default=[[2]], help="Potential strenghts of defects")
-parser.add_argument("-c","--defConc",dest="DefConc",nargs='+',type=float, default=[[0.05]], help="Concentration of defect")
+parser.add_argument("-c","--defConc",dest="DefConc",nargs='+',type=float, default=[0.05], help="Concentration of defect")
 parser.add_argument("-o","--out",dest="folder",type=str, default="images", help="Output folder for images")
 parser.add_argument("-i","--display",dest="disp",action="store_true", default=False, help="Display generated plots plots")
 
@@ -91,7 +91,10 @@ dtype = options.dtype
 clusterSize = options.clusterSize
 mval = np.array(options.mval)
 kval = np.array(options.kval)
-DefConc = options.DefConc #concentratation of defects
+if defects:
+    DefConc = options.DefConc #concentratation of defects
+else:
+    DefConc = [0]
 
 #Images output folder
 folder = options.folder+"/"
