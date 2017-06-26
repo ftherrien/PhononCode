@@ -18,8 +18,7 @@ def cell(s):
         except:
             raise argparse.ArgumentTypeError("Should be [x,y,z,...] of size nb")
     else:
-        print('popo')
-        raise argparse.ArgumentTypeError("Should be [x,y,z]")
+        raise argparse.ArgumentTypeError("Should be [x,y,z,...] of size nb")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primittive cell")
@@ -120,7 +119,7 @@ if rank==master:
 #Errors -----------------------------------------------------------------------------
 
 MacPrecErr= 2*np.finfo(float).eps
-GaussErr = 1.1**2 / (np.sqrt(2 * np.exp(1) * np.pi) * w**2 * nE)
+GaussErr = 1.1**3 / (12*np.sqrt(np.pi) * w**3 * nE**2)
 
 #Primitive Cell ---------------------------------------------------------------------
 b=nb*c #Size of lattice
