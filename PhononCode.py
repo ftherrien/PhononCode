@@ -120,7 +120,7 @@ if rank==master:
 #Errors -----------------------------------------------------------------------------
 
 MacPrecErr= 2*np.finfo(float).eps
-GaussFact = (nE*4*np.pi*w)/1.1
+GaussErr = 1.1**2 / (np.sqrt(2 * np.exp(1) * np.pi) * w**2 * nE)
 
 #Primitive Cell ---------------------------------------------------------------------
 b=nb*c #Size of lattice
@@ -293,9 +293,9 @@ q=np.linspace(0,(2*np.pi/b)/n*np.ceil(n/2.0),np.ceil(n/2.0)+1)
 #q=np.linspace(0,np.pi/b,int(n/2)+1)
 
 dE = omegasc.max()*1.1/(nE-1)
-w=w*omegasc.max()
+sig=w*omegasc.max()
 if gaussian:
-    Emin = -np.sqrt(2*w*dE*np.log(dE/(4*np.pi*w*CutOffErr**2)))
+    Emin = - sig * np.sqrt( np.log( dE / ( CutOffErr * sig * np.sqrt( np.pi ) ) ) )
     nE=nE+int(np.ceil(-Emin/dE))
     Emin = np.ceil(Emin/dE)*dE
 else:
@@ -310,7 +310,7 @@ Local_Sftotal = np.zeros((nE,len(Local_range)))
 Local_qLoopTimes = []
 
 t_total_q = time.time()
-                         
+
 for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-pi, pi]
 
     #timing
@@ -377,7 +377,7 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
             # print(dE)
             # print(delta)
             if gaussian == True:
-                delta = np.sqrt(dE / (4 * np.pi * w)) * np.exp(-(omegasc[i] - E[iE]) ** 2 / (4 * w * dE))
+                delta = dE / (sig*np.sqrt(np.pi)) * np.exp(-(omegasc[i] - E[iE]) ** 2 / sig**2)
                 condition = (delta > CutOffErr)
             else:
                 condition = (abs(omegasc[i] - E[iE]) < tol)
@@ -489,8 +489,8 @@ if rank == master:
     print('Max Error')
     MaxErr = np.max(abs(nb-np.sum(Sftotal,0)))
     print(MaxErr)
-    print('Gaussian Factor')
-    print(GaussFact)
+    print('Gaussian Error estimation')
+    print(GaussErr)
 
     #Display
     plt.figure()
