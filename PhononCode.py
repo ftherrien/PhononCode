@@ -494,6 +494,9 @@ if rank == master:
     #Display
     plt.figure()
     plt.plot(E, Sf[:,:, 0].T, '.-')
+    plt.ylabel('Spectral function (a.u.)')
+    plt.xlabel(r'Angular Frequency($\omega$)')
+    plt.title("Slice of the spectral map at q=0")
     ax = plt.gca()
     ymin, ymax = ax.get_ylim()
     deltalist = deltalist / max(deltalist)

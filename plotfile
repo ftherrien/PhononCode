@@ -7,6 +7,7 @@ set title "Lattice Thermal Conductivity for Random Defects"
 plot 'random.PHONON.out' using 3:6:8 with image notitle, \
      'random.PHONON.out' using 3:6:(sprintf("%.2f",$8)) with labels font "arial,8" notitle
 set term postscript eps color
+#set term png
 set output "LTCrandom.eps"
 replot
 
@@ -15,6 +16,7 @@ set title "Lattice Thermal Conductivity for Clustered Defects of size 3"
 plot "<(sed -n '1,110p' cluster.PHONON.out)" using 3:6:8 with image notitle, \
      "<(sed -n '1,110p' cluster.PHONON.out)" using 3:6:(sprintf("%.2f",$8)) with labels font "arial,8" notitle
 set term postscript eps color
+#set term png
 set output "LTCcluster3.eps"
 replot
 
@@ -23,6 +25,7 @@ set title "Lattice Thermal Conductivity for Clustered Defects of size 9"
 plot "<(sed -n '111,220p' cluster.PHONON.out)" using 3:6:8 with image notitle, \
      "<(sed -n '111,220p' cluster.PHONON.out)" using 3:6:(sprintf("%.2f",$8)) with labels font "arial,8" notitle
 set term postscript eps color
+#set term png
 set output "LTCcluste9.eps"
 replot
 
@@ -31,6 +34,7 @@ set title "Lattice Thermal Conductivity for Clustered Defects of size 27"
 plot "<(sed -n '221,330p' cluster.PHONON.out)" using 3:6:8 with image notitle, \
      "<(sed -n '221,330p' cluster.PHONON.out)" using 3:6:(sprintf("%.2f",$8)) with labels font "arial,8" notitle
 set term postscript eps color
+#set term png
 set output "LTCcluster27.eps"
 replot
 
@@ -38,6 +42,7 @@ set term x11 4
 set title "Lattice Thermal Conductivity for Random Defects"
 splot 'random.PHONON.out' using 3:6:8  with lines notitle
 set term postscript eps color
+#set term png
 set output "LTCrandom3D.eps"
 replot
 
@@ -46,5 +51,6 @@ set title "Lattice Thermal Conductivity for Ordered Defects"
 plot 'ordered.PHONON.out' using 3:6:8 with image notitle, \
      'ordered.PHONON.out' using 3:6:(sprintf("%.2f",$8)) with labels font "arial,8" notitle
 set term postscript eps color
+#set term png
 set output "LTCordered.eps"
 replot
