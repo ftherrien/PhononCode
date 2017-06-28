@@ -238,20 +238,20 @@ if rank == master:
 
     # Solving for supercell at Q=0 -----------------------------------------------------------------------------------------
 
-    # K matrix
-    secdiag = Vsc[0:na - 1]
-    maindiag = np.hstack((-(Vsc[0] + Vsc[na - 1]), -(Vsc[1:na] + Vsc[0:na - 1])))
-    K = (np.diag(secdiag, -1) + np.diag(maindiag, 0) + np.diag(secdiag, 1))
-    K[na - 1, 0] = K[na - 1, 0] + Vsc[na - 1]
-    K[0, na - 1] = K[0, na - 1] + Vsc[na - 1]
+    # D matrix
+    secdiag = Vsc[0:-1]/np.sqrt(Mvecsc[0:-1]*Mvecsc[1:])
+    maindiag = np.hstack((-(Vsc[0] + Vsc[-1])/Mvecsc[0], -(Vsc[1:] + Vsc[0:-1])/Mvecsc[1:]))
+    D = (np.diag(secdiag, -1) + np.diag(maindiag, 0) + np.diag(secdiag, 1))
+    D[-1, 0] = D[-1, 0] + Vsc[-1]/np.sqrt(Mvecsc[0]*Mvecsc[-1])
+    D[0,-1] = D[0,-1] + Vsc[-1]/np.sqrt(Mvecsc[0]*Mvecsc[-1])
 
     #print(K)
 
-    # System M*w^2*x+Kx=0 => (M^-1*K)x = w^2x
-    sysmat = la.inv(Msc).dot(K)
+    # System -w^2*x=Dx
+    sysmat = D
 
     # Solving system
-    omegasqsc, eigenvecsc = la.eig(-sysmat)
+    omegasqsc, eigenvecsc = la.eigh(-sysmat)
 
     omegasqsc=np.real(omegasqsc)
 
@@ -315,18 +315,18 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
     #timing
     t_q_i = time.time()
 
-    #K matrix
-    secdiag = V[0:nb-1]
-    maindiag = np.hstack((-(V[0]+V[nb-1]),-(V[1:nb]+V[0:nb-1])))
-    K = (np.diag(secdiag, -1) + np.diag(maindiag, 0) + np.diag(secdiag, 1))
-    K[nb-1,0]=K[nb-1,0]+V[nb-1]*np.exp(-1j*q[iq]*b)
-    K[0,nb-1]=K[0,nb-1]+V[nb-1]*np.exp(1j*q[iq]*b)
+    #D matrix
+    secdiag = V[0:-1]/np.sqrt(Mvec[0:-1]*Mvec[1:])
+    maindiag = np.hstack((-(V[0] + V[-1])/Mvec[0], -(V[1:] + V[0:-1])/Mvec[1:]))
+    D = (np.diag(secdiag, -1) + np.diag(maindiag, 0) + np.diag(secdiag, 1))
+    D[-1, 0] = D[-1, 0] + V[-1]*np.exp(-1j*q[iq]*b)/np.sqrt(Mvec[0]*Mvec[-1])
+    D[0,-1] = D[0,-1] + V[-1]*np.exp(1j*q[iq]*b)/np.sqrt(Mvec[0]*Mvec[-1])
 
-    #System M*w^2*x+Kx=0 => (M^-1*K)x = w^2x
-    sysmat = la.inv(M).dot(K)
+    #System -w^2*x=Dx
+    sysmat = D
 
     #Solving system
-    omegasq, eigenvec = la.eig(-sysmat)
+    omegasq, eigenvec = la.eigh(-sysmat)
 
     #Order the bands
     idx = omegasq.argsort()
@@ -476,6 +476,10 @@ if rank == master:
         plt.xlabel('Wave vector (q)')
         plt.title("Band %d"%s)
         plt.savefig(folder+"band_%d_spectral_map_"%s+namestamp+".png")
+    print('Primitive Cell frenquecies')
+    print(omegadisp)
+    print('Super Cell Energies')
+    print(omegasc)
     print('Validation')
     print('Total')
     print(np.sum(Sftotal,0))
