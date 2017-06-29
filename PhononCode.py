@@ -8,6 +8,7 @@ import os, os.path
 import argparse
 from mpi4py import MPI
 import sys
+import pickle
 
 def cell(s):
     if (s[0]=="[") and (s[-1]=="]"):
@@ -21,8 +22,8 @@ def cell(s):
         raise argparse.ArgumentTypeError("Should be [x,y,z,...] of size nb")
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primittive cell")
-parser.add_argument("-n","--scsize",dest="n", type=int, default=100, help="Number of primittive cell in super cell")
+parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primitive cell")
+parser.add_argument("-n","--scsize",dest="n", type=int, default=100, help="Number of primitive cell in super cell")
 parser.add_argument("-E","--energy",dest="nE", type=int, default=600, help="Number of energy values on scale")
 parser.add_argument("-T","--temp",dest="T", type=float, default=300, help="Temperature")
 parser.add_argument("-V","--potentials",dest="V", type=cell, default=[1], help="List of potential strenghts of size nb")
@@ -243,7 +244,7 @@ if rank == master:
     maindiag = np.hstack((-(Vsc[0] + Vsc[-1])/Mvecsc[0], -(Vsc[1:] + Vsc[0:-1])/Mvecsc[1:]))
     D = (np.diag(secdiag, -1) + np.diag(maindiag, 0) + np.diag(secdiag, 1))
     D[-1, 0] = D[-1, 0] + Vsc[-1]/np.sqrt(Mvecsc[0]*Mvecsc[-1])
-    D[0,-1] = D[0,-1] + Vsc[-1]/np.sqrt(Mvecsc[0]*Mvecsc[-1])
+    D[0, -1] = D[0, -1] + Vsc[-1]/np.sqrt(Mvecsc[0]*Mvecsc[-1])
 
     #print(K)
 
@@ -261,6 +262,7 @@ if rank == master:
     omegasc = np.sqrt(omegasqsc)
     eigenvecsc = eigenvecsc[:,idx]
 
+    
     # Gram-Schmidt Process (modified considering most vectors are orthonormal)
     eigenvecN = np.array(eigenvecsc)
     for i in range(na):
@@ -320,7 +322,7 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
     maindiag = np.hstack((-(V[0] + V[-1])/Mvec[0], -(V[1:] + V[0:-1])/Mvec[1:]))
     D = (np.diag(secdiag, -1) + np.diag(maindiag, 0) + np.diag(secdiag, 1))
     D[-1, 0] = D[-1, 0] + V[-1]*np.exp(-1j*q[iq]*b)/np.sqrt(Mvec[0]*Mvec[-1])
-    D[0,-1] = D[0,-1] + V[-1]*np.exp(1j*q[iq]*b)/np.sqrt(Mvec[0]*Mvec[-1])
+    D[0, -1] = D[0, -1] + V[-1]*np.exp( 1j*q[iq]*b)/np.sqrt(Mvec[0]*Mvec[-1])
 
     #System -w^2*x=Dx
     sysmat = D
@@ -334,7 +336,6 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
     eigenvec = eigenvec[:,idx]
 
     omegasq[omegasq < 0] = 0
-    omega=np.sqrt(omegasq)
     omega=np.sqrt(omegasq)
 
     omega=np.real(omega)
@@ -394,7 +395,7 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
 
                 # sum l=1->Nt on all space for the scalar product (in this case Nc = 1 => Nt = na)
                 for l in range(Nc*na):
-                    # sum s=1->nb on all solutions of the primittive cell
+                    # sum s=1->nb on all solutions of the primitive cell
                     for s in range(nb):
                         ScalarProd[s] = ScalarProd[s] + 1/Nc*np.conj(eigenvecsc[l%na,i])*1/np.sqrt(n)*eigenvec[l%nb,s]*np.exp(-1j*q[iq]*(l//nb)*b)
 
@@ -437,9 +438,13 @@ if rank == master:
     omegadisp = np.concatenate(Global_omegadisp)
     Sf = np.concatenate(Global_Sf,2)
     Sftotal = np.concatenate(Global_Sftotal,1)
+
+    # Save resulting matrix
+    pickle.dump( Sf, open( folder+"Sf.dat", "wb" ) )
+    pickle.dump( Sftotal, open( folder+"Sftotal.dat", "wb" ) )
     
     plt.figure()
-    plt.plot(qdisp,omegadisp)
+    plt.plot(qdisp,omegadisp,'.')
     plt.ylabel(r'Angular Frequency($\omega$)')
     plt.xlabel('Wave vector(q)')
     plt.title("Primitive cell band structure")
@@ -476,9 +481,9 @@ if rank == master:
         plt.xlabel('Wave vector (q)')
         plt.title("Band %d"%s)
         plt.savefig(folder+"band_%d_spectral_map_"%s+namestamp+".png")
-    print('Primitive Cell frenquecies')
+    print('Primitive Cell Frenquecies')
     print(omegadisp)
-    print('Super Cell Energies')
+    print('Super Cell Frequencies')
     print(omegasc)
     print('Validation')
     print('Total')
