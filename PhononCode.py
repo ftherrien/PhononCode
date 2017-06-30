@@ -454,7 +454,7 @@ if rank == master:
     Sf[Sf<MacPrecErr]=0
 
     plt.figure()
-    plt.imshow(Sftotal, interpolation='None', origin='lower',
+    plt.imshow(np.sum(Sf,0), interpolation='None', origin='lower',
                     cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
     plt.ylabel(r'Angular Frequency($\omega$)')
     plt.xlabel('Wave vector(q)')
