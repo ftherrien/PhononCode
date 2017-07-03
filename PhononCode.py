@@ -23,7 +23,7 @@ def cell(s):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primitive cell")
-parser.add_argument("-n","--scsize",dest="n", type=int, default=100, help="Number of primitive cell in super cell")
+parser.add_argument("-n","--scsize",dest="n", type=int, default=50, help="Number of primitive cell in super cell")
 parser.add_argument("-E","--energy",dest="nE", type=int, default=600, help="Number of energy values on scale")
 parser.add_argument("-T","--temp",dest="T", type=float, default=300, help="Temperature")
 parser.add_argument("-V","--potentials",dest="V", type=cell, default=[1], help="List of potential strenghts of size nb")
@@ -280,9 +280,7 @@ else:
 
 eigenvecsc = comm.bcast(eigenvecsc)
 omegasc = comm.bcast(omegasc)
-    
-Local_qdisp=[]
-Local_omegadisp=[]
+
 tol = omegasc.max()*1.1/(2*(nE-1)) #Tolerence for equality
 
 # Solving for primitive cell at q = Q + G ------------------------------------------------------------------------------
@@ -303,10 +301,11 @@ else:
     Emin = 0
 E=np.linspace(Emin,omegasc.max()*1.1,nE)
 
-Local_range = load_balance(int(n/2)+1)
+Local_range = load_balance(len(q))
 
 Local_Sf = np.zeros((nb,nE,len(Local_range)))
 Local_Sftotal = np.zeros((nE,len(Local_range)))
+Local_omegadisp=np.zeros((nb,len(Local_range)))
 
 Local_qLoopTimes = []
 
@@ -353,9 +352,8 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
     eigenvec=np.array(eigenvecN)
 
     # Original band structure
-    Local_qdisp=np.hstack((Local_qdisp,np.ones((1,nb))[0]*q[iq]))
-    Local_omegadisp=np.hstack((Local_omegadisp,np.real(omega)))
-
+    Local_omegadisp[:,jq]=omega 
+    
     #t_energy_loop = time.time()
     #t_i_loop = np.zeros(nE)
     deltalist=np.zeros(len(E))
@@ -426,7 +424,6 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
     #print('-------------------------------------------------')
 
 
-Global_qdisp = comm.gather(Local_qdisp)
 Global_omegadisp = comm.gather(Local_omegadisp)
 Global_Sf = comm.gather(Local_Sf)
 Global_Sftotal = comm.gather(Local_Sftotal)
@@ -434,8 +431,7 @@ qLoopTimes = comm.gather(Local_qLoopTimes)
 
 if rank == master:
 
-    qdisp = np.concatenate(Global_qdisp)
-    omegadisp = np.concatenate(Global_omegadisp)
+    omegadisp = np.concatenate(Global_omegadisp,1)
     Sf = np.concatenate(Global_Sf,2)
     Sftotal = np.concatenate(Global_Sftotal,1)
 
@@ -444,7 +440,7 @@ if rank == master:
     pickle.dump( Sftotal, open( folder+"Sftotal.dat", "wb" ) )
     
     plt.figure()
-    plt.plot(qdisp,omegadisp,'.')
+    plt.plot(q,omegadisp.T,'.')
     plt.ylabel(r'Angular Frequency($\omega$)')
     plt.xlabel('Wave vector(q)')
     plt.title("Primitive cell band structure")
@@ -518,9 +514,9 @@ if rank == master:
 
     #lifetime calculations -------------------------------------------------------------------------------------------------
 
-    EAvg = np.zeros((nb, int(n / 2) + 1))
-    EsqAvg = np.zeros((nb, int(n / 2) + 1))
-    Var = np.zeros((nb, int(n / 2) + 1))
+    EAvg = np.zeros((nb, len(q)))
+    EsqAvg = np.zeros((nb, len(q)))
+    Var = np.zeros((nb, len(q)))
 
 
     for s in range(nb):
@@ -544,6 +540,7 @@ if rank == master:
     plt.plot(q,EAvg.T)
     for s in range(nb):
         plt.fill_between(q, EAvg[s, :] - DeltaE[s, :], EAvg[s, :] + DeltaE[s, :],color='#6E6E6E',alpha=0.2)
+    plt.plot(q,omegadisp.T,'--')
     plt.ylabel(r'Angular Frequency($\omega$)')
     plt.xlabel('Wave vector (q)')
     plt.title("Average frequency and standard deviation")
@@ -559,15 +556,16 @@ if rank == master:
     # Lattice Thermal Conductivity -----------------------------------------------------------------------------------------
 
     dq = 2*np.pi/a
+    Vol = b/(2*np.pi)
     bar = hbar_kb*EAvg/T
-    C=np.ones((nb,int(n / 2) + 1))
+    C=np.ones((nb,len(q)))
     C[bar>=MacPrecErr] = bar[bar>=MacPrecErr]**2*np.exp(bar[bar>=MacPrecErr])/(np.exp(bar[bar>=MacPrecErr])-1)**2
-    v = np.zeros((nb,int(n / 2) + 1))
+    v = np.zeros((nb,len(q)))
     v[:,1:-1] = 1/dq*1/2*(EAvg[:,2:]-EAvg[:,:-2])
     v[:,0] = 1/dq*(2*EAvg[:,1]-3/2*EAvg[:,0]-1/2*EAvg[:,2])
     v[:,-1] = 1/dq*(-2*EAvg[:,-2]+3/2*EAvg[:,-1]+1/2*EAvg[:,-3])
 
-    k = dq*np.sum(C*v**2*Tau,1)
+    k = 1/Vol*np.sum(C*v**2*Tau,1)
     LTC = np.sum(k)
 
     print("##################################################")
