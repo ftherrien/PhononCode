@@ -9,6 +9,7 @@ import argparse
 from mpi4py import MPI
 import sys
 import pickle
+import re
 
 def cell(s):
     if (s[0]=="[") and (s[-1]=="]"):
@@ -20,6 +21,26 @@ def cell(s):
             raise argparse.ArgumentTypeError("Should be [x,y,z,...] of size nb")
     else:
         raise argparse.ArgumentTypeError("Should be [x,y,z,...] of size nb")
+
+def bonds(s):
+    if (s[0]=="[") and (s[-1]=="]"):
+        try:
+            s=s[1:-1]
+            dTypeList = re.findall('\[[0-9,\,,\., ]*\]|(?<=\,)[^,]*(?=\,)|(?<=\,)[^,]*$',s)
+            for i,s in enumerate(dTypeList):
+                if (s[0]=="[") and (s[-1]=="]"):
+                    s=s[1:-1]
+                    dTypeList[i] = list(map(float, s.split(',')))
+                else:
+                    if i==len(dTypeList)-1:
+                        dTypeList[i]=[float(s)]
+                    else:
+                        dTypeList[i]=[float(s),float(s)]
+            return [np.array(dTypeList[:-1]),dTypeList[-1]]
+        except:
+            raise argparse.ArgumentTypeError("Should be of form [e_i,[e_{0l},e_{0r}],...,[e_{(nd-1)l},e_{(nd-1)r}],[i_1,i_2,...,i_{nb-1}]]")
+    else:
+        raise argparse.ArgumentTypeError("Should be a python list []")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primitive cell")
@@ -35,7 +56,7 @@ parser.add_argument("-d","--defects",dest="defects", action="store_true", defaul
 parser.add_argument("-t","--dtype",dest="dtype",nargs='+', type=str, default=["random"], help="Available types: ordered, random, cluster")
 parser.add_argument("-s","--cluster",dest="clusterSize",nargs='+',type=float, default=[3], help="Size factor for clustered defects")
 parser.add_argument("-m","--dmasses",dest="mval",nargs='+',type=cell, default=[[2]], help="Mass of defects")
-parser.add_argument("-v","--dpotentials",dest="kval",nargs='+',type=cell, default=[[2]], help="Potential strenghts of defects")
+parser.add_argument("-v","--dpotentials",dest="kval",nargs='+',type=bonds, default=[[2]], help="Potential strenghts of defects")
 parser.add_argument("-c","--defConc",dest="DefConc",nargs='+',type=float, default=[0.05], help="Concentration of defect")
 parser.add_argument("-o","--out",dest="folder",type=str, default="images", help="Output folder for images")
 parser.add_argument("-i","--display",dest="disp",action="store_true", default=False, help="Display generated plots plots")
@@ -90,7 +111,7 @@ defects = options.defects
 dtype = options.dtype
 clusterSize = options.clusterSize
 mval = np.array(options.mval)
-kval = np.array(options.kval)
+kval = options.kval
 if defects:
     DefConc = options.DefConc #concentratation of defects
 else:
@@ -155,12 +176,11 @@ def invCumulFunc(folder,namestamp,graph,n,occpos,mu,var,x):
     CumulFunc = np.zeros(n)
     DensProb = np.zeros(n)
     mu = np.append(np.append(mu - n,mu),mu+n) #periodicity considering effect of n+ is negligable
-    if any(occpos == 0):
-        CumulFunc[0] = 0
-    else:
-        CumulFunc[0] = np.sum(1 / np.pi * np.exp(-(mu) ** 2 / var))
+    if (occpos[0] == 0):
+        DensProb[0] = np.sum(1 / np.pi * np.exp(-(mu) ** 2 / var))
+        CumulFunc[0] = DensProb[0]
     for i in range(1,n):
-        if all(occpos != i):
+        if (occpos[i] == 0):
             DensProb[i] = np.sum(1 / np.pi * np.exp(-(i - mu) ** 2 / var))
         CumulFunc[i] = CumulFunc[i - 1] + DensProb[i]
     DensProb = DensProb / CumulFunc[-1]
@@ -184,59 +204,60 @@ def invCumulFunc(folder,namestamp,graph,n,occpos,mu,var,x):
 if rank == master:
     # Defects
     if defects:
-        availpos = np.arange(n)
-        occpos = np.array([])
+        occpos = np.zeros(n,np.int)
 
         for i in range(len(mval)):
-
+            
+            availpos = list(np.arange(n)[occpos==0])
             ndefects = int(DefConc[i] * n)
             if ndefects == 0:
                 print('WARNING: The specified defect concentration is too low for the size of the super cell: there is no defect of type %d'%(i+1),file=sys.stderr)
             else:
                 if dtype[i] == "ordered":
-                    pos = np.arange(i, n, int(1 / DefConc[i]))
-
-                    for j in range(nb):
-                        Mvecsc[nb*pos+j] = mval[i][j]
-                        Vsc[nb*pos+j] = kval[i][j]
+                    pos = np.arange(i, n, int(1 / DefConc[i]),np.int)
+                    occpos[pos] = i+1
 
                 if dtype[i] == "random":
-                    pos = rd.sample(list(availpos),ndefects)
+                    pos = rd.sample(availpos,ndefects)
                     pos = np.array(pos)
-
-                    for p in pos:
-                        availpos = availpos[availpos!=p]
-
-                    for j in range(nb):
-                        Mvecsc[nb*pos+j] = mval[i][j]
-                        Vsc[nb*pos+j] = kval[i][j]
+                    occpos[pos] = i+1
 
                 if dtype[i] == "cluster":
-                    mu = np.array([])
+                    mu = np.array([],np.int)
                     graph = False
                     for k in range(ndefects):
 
                         if k==0:
-                            pos = rd.sample(list(availpos),1)[0]
+                            posk = rd.sample(availpos,1)[0]
                         else:
                             if k == ndefects-1:
                                 graph = True
-                            pos = invCumulFunc(folder,namestamp,graph,n,occpos,mu,clusterSize[i]**2,rd.random())
-                        mu = np.append(mu,pos)
-                        occpos = np.append(occpos,pos)
-                        
-                        for j in range(nb):
-                            Mvecsc[nb*pos+j] = mval[i][j]
-                            Vsc[nb*pos+j] = kval[i][j]
+                            posk = invCumulFunc(folder,namestamp,graph,n,occpos,mu,clusterSize[i]**2,rd.random())
+                        mu = np.append(mu,posk)
+                        occpos[posk] = i+1
+                    pos = mu
 
-                    for p in occpos:
-                        availpos = availpos[availpos != p]
+                nextp = pos + 1
+                nextp[nextp==n]=0
+                prevp = pos - 1
+                prevp[prevp==-1]=n-1
+                
+                Vsc[nb*(pos+1)-1] = kval[i][0][occpos[nextp],1]
+                Vsc[nb*pos-1] = kval[i][0][occpos[prevp],0]
+                
+                for p in pos:
+                    Vsc[nb*p:nb*(p+1)-1] = kval[i][1]
+                    Mvecsc[nb*p:nb*(p+1)]= mval[i]
+
 
     Msc = np.diag(Mvecsc, 0)
 
+    print('Masses:')
     print(Mvecsc)
+    print('Bond strengths')
     print(np.real(Vsc))
-
+    print('Defect locations')
+    print(occpos)
     # Solving for supercell at Q=0 -----------------------------------------------------------------------------------------
 
     # D matrix
