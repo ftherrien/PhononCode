@@ -8,6 +8,14 @@ The PARAM.out contains all the parameters of the run that created its parent fol
 
 The code is parallelizable up to n the number of primittive cell in the super cell.
 
+Specific instructions:
+
+Bond strenght (k) is specified with a list of form: [[e_{0l},e_{0r}],...,[e_{(nd-1)l},e_{(nd-1)r}],e_nd,[i_1,i_2,...,i_{nb-1}]]
+    Where:
+    e_{0l} is the interaction on the 'left' (l) side of the cell with the primitive cell (0)
+    e_{1l} is the interaction on the 'left' (l) side of the cell with the first type of defect
+    i_1 is the first internal bond in the defect
+
 Requires: numpy, matplotlib, mpi4py, scipy
 
 
@@ -48,10 +56,11 @@ optional arguments:
 Examples:
 
 Serial call:
-python3 PhononCode.py -n 50 -d -t random -v [2] -c 0.01 -o run1
+python3 PhononCode.py -b 2 -V [1,1] -M [1,1] -n 50 -d -t ordered random -v [[2.1,2.1],2.2,2] [[3.1,3.1],[3.2,3.2],3.3,3] -m [2,2] [3,3] -s 3 3 -c 0.3 0.3 -i
+
 
 Parallel call:
-mpiexec -n 4 python3 PhononCode.py -b 2 -V [1,1] -M [1,1] -n 20 -d -t random cluster -s 3 3 -v [2,2] [2,1] -m [1,1] [1,1] -c 0.01 0.1 -o run1 -i
+mpiexec -n 4 python3 PhononCode.py -b 2 -V [1,1] -M [1,1] -n 50 -d -t ordered random -v [[2.1,2.1],2.2,2] [[3.1,3.1],[3.2,3.2],3.3,3] -m [2,2] [3,3] -s 3 3 -c 0.3 0.3 -o run1
 
 
 

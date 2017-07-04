@@ -38,7 +38,7 @@ def bonds(s):
                         dTypeList[i]=[float(s),float(s)]
             return [np.array(dTypeList[:-1]),dTypeList[-1]]
         except:
-            raise argparse.ArgumentTypeError("Should be of form [e_i,[e_{0l},e_{0r}],...,[e_{(nd-1)l},e_{(nd-1)r}],[i_1,i_2,...,i_{nb-1}]]")
+            raise argparse.ArgumentTypeError("Should be of form [[e_{0l},e_{0r}],...,[e_{(nd-1)l},e_{(nd-1)r}],e_i,[i_1,i_2,...,i_{nb-1}]]")
     else:
         raise argparse.ArgumentTypeError("Should be a python list []")
 
