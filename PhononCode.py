@@ -27,18 +27,30 @@ def bonds(s):
         try:
             s=s[1:-1]
             dTypeList = re.findall('\[[0-9,\,,\., ]*\]|(?<=\,)[^,]*(?=\,)|(?<=\,)[^,]*$',s)
-            for i,s in enumerate(dTypeList):
-                if (s[0]=="[") and (s[-1]=="]"):
-                    s=s[1:-1]
-                    dTypeList[i] = list(map(float, s.split(',')))
+            NonList=0
+            InitLen = len(dTypeList)
+            for i,s in enumerate(list(dTypeList)):
+                if (s=='' or  s==' ') and i==InitLen-1 and NonList==1:
+                    dTypeList[i]=[]
                 else:
-                    if i==len(dTypeList)-1:
-                        dTypeList[i]=[float(s)]
+                    if (s[0]=="[") and (s[-1]=="]"):
+                        s=s[1:-1]
+                        if s=='' or  s==' ':
+                            dTypeList[i]=[]
+                        else:
+                            dTypeList[i] = list(map(float, s.split(',')))
                     else:
-                        dTypeList[i]=[float(s),float(s)]
+                        NonList=+1
+                        if NonList==1:
+                            dTypeList[i]=[float(s),float(s)]
+                            if i == InitLen-1:
+                                dTypeList.append([])
+                        else:
+                            dTypeList[i]=[float(s)]
+                    
             return [np.array(dTypeList[:-1]),dTypeList[-1]]
         except:
-            raise argparse.ArgumentTypeError("Should be of form [[e_{0l},e_{0r}],...,[e_{(nd-1)l},e_{(nd-1)r}],e_i,[i_1,i_2,...,i_{nb-1}]]")
+            raise argparse.ArgumentTypeError("Should be of form [e_i,[e_{0l},e_{0r}],...,[e_{(nd-1)l},e_{(nd-1)r}],[i_1,i_2,...,i_{nb-1}]]")
     else:
         raise argparse.ArgumentTypeError("Should be a python list []")
 
@@ -82,10 +94,12 @@ else:
 
 ## PARAMETERS #######################################################################
 c=1 #Interatomic spacing
-nb=options.nb #Number of particles per primitive cell
-n=options.n #number of primitive cell in super cell
+nb = options.nb #Number of particles per primitive cell
+n = options.n #Initial number of primitive cell in super cell
 nE = options.nE #Number of energy values on scale
-Nc=1 #Number of Sc in Von Karman cell
+Na = 1 #Total number of SC in B-vKC
+Nb = n #Total number of PC in B-vKC
+Nc = n*nb #Total number of atoms in Born-von Karman cell
 T = options.T #Temperature in Kelvin
 
 # Potential
@@ -112,6 +126,10 @@ dtype = options.dtype
 clusterSize = options.clusterSize
 mval = np.array(options.mval)
 kval = options.kval
+for im,m in enumerate(mval):
+    if len(kval[im][-1])+1 != len(m):
+        raise argparse.ArgumentTypeError("The defect mass and potential should be the same size")
+
 if defects:
     DefConc = options.DefConc #concentratation of defects
 else:
@@ -124,7 +142,6 @@ namestamp = "phon"
 #Constant
 hbar_kb=7.63824*10**(-12) #second kelvins
 
-# There should be no need to modify anything after this line
 ## PARAMETERS #######################################################################
 if rank==master:
     if (not os.path.exists(folder)):
@@ -149,12 +166,12 @@ M = np.diag(Mvec, 0)
 
 #Super Cell -------------------------------------------------------------------------
 na=n*nb#Number of particles per cell
-a= na*c #Size of lattice
+a = na*c #Size of lattice
 
 #Potential
-Vsc=np.tile(V,n)
+Vsc=[np.array(V) for i in range(n)] #np.tile(V,(n,1))
 #Masses
-Mvecsc=np.tile(Mvec,n)
+Mvecsc=[np.array(Mvec) for i in range(n)] #np.tile(Mvec,(n,1))
 
 def load_balance(n_tasks):
 # Defines the interval each cores needs to compute
@@ -201,6 +218,23 @@ def invCumulFunc(folder,namestamp,graph,n,occpos,mu,var,x):
 
     return pos
 
+def gcd(x, y):
+   """This function implements the Euclidian algorithm
+   to find G.C.D. of two numbers"""
+
+   while(y):
+       x, y = y, x % y
+
+   return x
+
+# define lcm function
+def lcm(x, y):
+   """This function takes two
+   integers and returns the L.C.M."""
+
+   lcm = (x*y)//gcd(x,y)
+   return lcm
+
 if rank == master:
     # Defects
     if defects:
@@ -242,23 +276,39 @@ if rank == master:
                 prevp = pos - 1
                 prevp[prevp==-1]=n-1
                 
-                Vsc[nb*(pos+1)-1] = kval[i][0][occpos[nextp],1]
-                Vsc[nb*pos-1] = kval[i][0][occpos[prevp],0]
-                
-                for p in pos:
-                    Vsc[nb*p:nb*(p+1)-1] = kval[i][1]
-                    Mvecsc[nb*p:nb*(p+1)]= mval[i]
+                for ip,p in enumerate(pos):
+                    Vsc[p-1][-1] = kval[i][0][occpos[prevp[ip]],0]
+                    Vsc[p] = np.append(kval[i][1],kval[i][0][occpos[nextp[ip]],1])
+                    Mvecsc[p]= mval[i]
 
+    Vsc = np.concatenate(Vsc)
+    Mvecsc = np.concatenate(Mvecsc)
+
+    print(Mvecsc)
+    print(np.real(Vsc))
+    print('---')
+    print(occpos)
+
+    # New SuperCell size
+    na = len(Mvecsc)
+    a = na*c
+    Nc = lcm(na,nb)
+    Na = Nc//na
+    Nb = Nc//nb 
+
+    print(na,nb,Nc,Na,Nb)
+    
+    # Temporary non optimal fix TODO
+    Vsc = np.tile(Vsc,Na)
+    Mvecsc = np.tile(Mvecsc,Na)
+    na = int(na*Na)
+    print("WARNING: to match the PC and the defects, the SC has to be %d times larger"%Na)
+    Na = 1
+    a = na*c
+    
+    # Solving for supercell at Q=0 -----------------------------------------------------------------------------------------
 
     Msc = np.diag(Mvecsc, 0)
-
-    print('Masses:')
-    print(Mvecsc)
-    print('Bond strengths')
-    print(np.real(Vsc))
-    print('Defect locations')
-    print(occpos)
-    # Solving for supercell at Q=0 -----------------------------------------------------------------------------------------
 
     # D matrix
     secdiag = Vsc[0:-1]/np.sqrt(Mvecsc[0:-1]*Mvecsc[1:])
@@ -306,17 +356,13 @@ tol = omegasc.max()*1.1/(2*(nE-1)) #Tolerence for equality
 
 # Solving for primitive cell at q = Q + G ------------------------------------------------------------------------------
 
-#count=np.zeros((int(n/2)+1,na))
-
-q=np.linspace(0,(2*np.pi/b)/n*np.ceil(n/2.0),np.ceil(n/2.0)+1)
-
-#q=np.linspace(0,np.pi/b,int(n/2)+1)
+q=np.arange(0,1/2+1/(Nb),1/(Nb))*(2*np.pi/b)
 
 dE = omegasc.max()*1.1/(nE-1)
-sig=w*omegasc.max()
+sig = w*omegasc.max()
 if gaussian:
     Emin = - sig * np.sqrt( np.log( dE / ( CutOffErr * sig * np.sqrt( np.pi ) ) ) )
-    nE=nE+int(np.ceil(-Emin/dE))
+    nE = nE+int(np.ceil(-Emin/dE))
     Emin = np.ceil(Emin/dE)*dE
 else:
     Emin = 0
@@ -412,11 +458,11 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
 
                 ############[ SCALAR PRODUCT ]############
 
-                # sum l=1->Nt on all space for the scalar product (in this case Nc = 1 => Nt = na)
-                for l in range(Nc*na):
+                # sum l=1->Nt on all space for the scalar product
+                for l in range(Nc):
                     # sum s=1->nb on all solutions of the primitive cell
                     for s in range(nb):
-                        ScalarProd[s] = ScalarProd[s] + 1/Nc*np.conj(eigenvecsc[l%na,i])*1/np.sqrt(n)*eigenvec[l%nb,s]*np.exp(-1j*q[iq]*(l//nb)*b)
+                        ScalarProd[s] = ScalarProd[s] + 1/np.sqrt(Na*Nb)*np.conj(eigenvecsc[l%na,i])*eigenvec[l%nb,s]*np.exp(-1j*q[iq]*(l//nb)*b)
 
                 # ////////////[ SCALAR PRODUCT ]////////////
                 for s in range(nb):
@@ -443,7 +489,6 @@ for jq,iq in enumerate(Local_range): # Wave vector times lattice vector (1D) [-p
     #print('System solve + GS proces=', -t_q_i + t_energy_loop)
 
     #print('-------------------------------------------------')
-
 
 Global_omegadisp = comm.gather(Local_omegadisp)
 Global_Sf = comm.gather(Local_Sf)
@@ -619,5 +664,5 @@ if rank == master:
     print('Sequential end time',t_total_q - t_total_i)
     print('Total elapsed time:', t_total_f-t_total_i)
 
-if options.disp:
-    plt.show()
+    if options.disp:
+        plt.show()
