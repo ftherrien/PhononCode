@@ -796,11 +796,11 @@ if rank == master:
     printdtype = ' '.join([str(i) for i in dtype])
     printclusterSize = ' '.join([str(i) for i in clusterSize])
     printdefconc = ' '.join([str(i) for i in DefConc])
-    printmass = '-'.join([str(i) for i in Mvec])
-    printpot = '-'.join([str(i) for i in np.real(V)])
-    printdpot = ' '.join(['-'.join([str(j) for j in i]) for i in kval])
-    printdmass = ' '.join(['-'.join([str(j) for j in i]) for i in mval])
-    print(printmass,printpot,printdefconc,printdtype,printclusterSize,printdpot,printdmass,LTC, file=f)
+    printmass = ' '.join([str(i) for i in Mvec])
+    printpot = ' '.join([str(i) for i in np.real(V)])
+    printdpot = ' '.join([' '.join([str(C) for B in A[0] for C in B])+' '+' '.join([str(B) for B in A[1]]) for A in kval])
+    printdmass = ' '.join([' '.join([str(j) for j in i]) for i in mval])
+    print(printmass,' ',printpot,' ',printdefconc,' ',printdtype,' ',printclusterSize,' ',printdpot,' ',printdmass,' ',LTC, file=f)
     f.close
 
     t_total_f = time.time()
