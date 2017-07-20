@@ -127,6 +127,15 @@ def allgatherv(A):
     Alist = comm.allgather(A)
     return [sub_elem for elem in Alist for sub_elem in elem]
 
+def resetColors():
+    try:
+        plt.gca().set_prop_cycle(None)
+    except:
+        plt.gca().set_color_cycle(None)
+
+def gaussErr(w,nE):
+    return 1.1**3 / (12*np.sqrt(np.pi) * w**3 * nE**2)
+        
 parser = argparse.ArgumentParser()
 parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primitive cell")
 parser.add_argument("-n","--scsize",dest="n", type=int, default=50, help="Number of primitive cell in super cell")
@@ -236,7 +245,7 @@ if rank==master:
 #Errors -----------------------------------------------------------------------------
 
 MacPrecErr= 2*np.finfo(float).eps
-GaussErr = 1.1**3 / (12*np.sqrt(np.pi) * w**3 * nE**2)
+GaussErr = gaussErr(w,nE)
 
 #Primitive Cell ---------------------------------------------------------------------
 b=nb*c #Size of lattice
@@ -547,7 +556,7 @@ for rep in range(repeat):
         #print('Total times for Loop in i=', t_i_loop)
         t_q_f = time.time()
         Local_qLoopTimes.append(t_q_f - t_q_i)
-        print("Finished %d in core %d in %f seconds"%(iq,rank,t_q_f - t_q_i))
+        print("Finished %d of run %d in core %d in %f seconds"%(iq,rep,rank,t_q_f - t_q_i))
         #print('Energy loop time=',t_q_f-t_energy_loop)
         #print('System solve + GS proces=', -t_q_i + t_energy_loop)
     
@@ -735,10 +744,10 @@ if rank == master:
     # Display
     plt.figure()
     plt.plot(q,EAvg.T)
-    plt.gca().set_prop_cycle(None)
+    resetColors()
     for s in range(nb):
         plt.fill_between(q, EAvg[s, :] - DeltaE[s, :], EAvg[s, :] + DeltaE[s, :],alpha=0.2)
-    plt.gca().set_prop_cycle(None)
+    resetColors()    
     plt.plot(q,omegadisp.T,'--')
     plt.ylabel(r'Angular Frequency($\omega$)')
     plt.xlabel('Wave vector (q)')
