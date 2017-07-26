@@ -359,7 +359,13 @@ if __name__=="__main__":
         sysmat = D
     
         # Solving system
-        omegasqsc, eigenvecsc = la.eigh(-sysmat)
+        try:
+            omegasqsc, eigenvecsc = la.eigh(-sysmat)
+        except:
+            print('Defect layout:')
+            print(occpos)
+            raise LinAlgError("Eigenvalues did not converge")
+        
     
         omegasqsc=np.real(omegasqsc)
     
