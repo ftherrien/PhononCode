@@ -362,9 +362,9 @@ if __name__=="__main__":
         try:
             omegasqsc, eigenvecsc = la.eigh(-sysmat)
         except:
-            print('Defect layout:')
-            print(occpos)
-            raise LinAlgError("Eigenvalues did not converge")
+            print("Defect layout:",file=sys.stderr)
+            print(occpos,file=sys.stderr)
+            print("Eigenvalues did not converge",file=sys.stderr)
         
     
         omegasqsc=np.real(omegasqsc)

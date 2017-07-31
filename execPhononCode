@@ -1,24 +1,32 @@
 #!/bin/bash
 #PBS -N TheCOUP
 #PBS -j oe
-#PBS -l feature=haswell
-#PBS -l nodes=5:ppn=24
-#PBS -q short
+##PBS -l feature=haswell
+#PBS -l nodes=21:ppn=24
+#PBS -q large
 #PBS -A NRELMatDB
-#PBS -l walltime=03:00:00
+#PBS -l walltime=24:00:00
+
+cd /scratch/felixt/PhononCode/secondrun
 
 mv PHONON.out PHONON.out.old
 
-mpirun -np 101 python3 PhononCode.py -n 200 -w 0.02 -o run_0
-for s in 3 9 27
+# mpirun -np 101 python3 PhononCode.py -n 200 -w 0.02 -o run_0
+for s in 1
 do
-    for i in $(seq 10)
+    for i in 0 $(seq 20)
     do
-	for j in $(seq 10)
+        for ve in 2 3
 	do
-	    c=$(echo "0.01*${i}" | bc -l)
-	    v=$(echo "0.2*${j}" | bc -l)
-	    mpirun -np 101 python3 PhononCode.py -n 200 -w 0.02 -d -t cluster -s ${s} -v [${v}] -m [1] -c ${c} -o run2_${i}.${j} > run2_${s}${i}.${j}.log
-	done
+	    vs=$(echo "${ve}/2" | bc -l)
+            if [ $i == "0" ]
+		    then
+		c="0.001"
+		    else
+		        c=$(echo "0.005*${i}" | bc -l)
+	    fi
+            mpirun -np 501 python3 ../PhononCode.py -n 1000 -E 500 -w 0.003 -d -t random -v [[${ve},${ve}],${vs}] -m [1] -c ${c} -r 5 -o potential_runs_${c}-${ve} > potential_runs_${c}-${ve}.log
+        done
+        echo -e "" >> PHONON.out
     done
 done
