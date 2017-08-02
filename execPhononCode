@@ -1,22 +1,25 @@
 #!/bin/bash
-#PBS -N TheCOUP
+#PBS -N ge1.4_test_TheCOUP
 #PBS -j oe
 ##PBS -l feature=haswell
 #PBS -l nodes=21:ppn=24
 #PBS -q large
 #PBS -A NRELMatDB
-#PBS -l walltime=24:00:00
+#PBS -l walltime=03:00:00
 
-cd /scratch/felixt/PhononCode/secondrun
+cd /scratch/felixt/PhononCode/runs/ge1/
 
-mv PHONON.out PHONON.out.old
+PHONPATH=/scratch/felixt/PhononCode
 
-# mpirun -np 101 python3 PhononCode.py -n 200 -w 0.02 -o run_0
+cp PHONON.out $(mktemp -u PHONON.old.XXXXX)
+
+#mpirun -np 501 python3 $PHONPATH/PhononCode.py -n 1000 -E 2600 -w 0.001 -o ge1.4_0 > ge1.4_0.log
+
 for s in 1
 do
     for i in 0 $(seq 20)
     do
-        for ve in 2 3
+        for ve in 0.1 0.5 2 10
 	do
 	    vs=$(echo "${ve}/2" | bc -l)
             if [ $i == "0" ]
@@ -25,7 +28,7 @@ do
 		    else
 		        c=$(echo "0.005*${i}" | bc -l)
 	    fi
-            mpirun -np 501 python3 ../PhononCode.py -n 1000 -E 500 -w 0.003 -d -t random -v [[${ve},${ve}],${vs}] -m [1] -c ${c} -r 5 -o potential_runs_${c}-${ve} > potential_runs_${c}-${ve}.log
+            mpirun -np 501 python3 $PHONPATH/PhononCode.py -n 1000 -E 2600 -w 0.001 -d -t random -v [[${ve},${ve}],${vs}] -m [1] -c ${c} -r 5 -o ge1.4_${c}-${ve} > ge1.4_${c}-${ve}.log
         done
         echo -e "" >> PHONON.out
     done
