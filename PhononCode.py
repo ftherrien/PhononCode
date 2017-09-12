@@ -390,16 +390,21 @@ if __name__=="__main__":
         sysmat = D
     
         # Solving system
-        try:
-            omegasqsc, eigenvecsc = la.eigh(-sysmat)
-        except:
-            print(V)
-            print(Mvec)
-            pickle.dump(D, open("Dmatrix.dat","wb"))
-            print("Defect layout:",file=sys.stderr)
-            print(occpos,file=sys.stderr)
-            print("Eigenvalues did not converge",file=sys.stderr)
-        
+        ntries=3
+        for tries in range(ntries):
+            try:
+                omegasqsc, eigenvecsc = la.eigh(-sysmat)
+            except:
+                print(V)
+                print(Mvec)
+                pickle.dump(D, open("Dmatrix.dat","wb"))
+                print("Defect layout:",file=sys.stderr)
+                print(occpos,file=sys.stderr)
+                print("Eigenvalues did not converge after try %d"%tries,file=sys.stderr)
+                if tries==ntries-1:
+                    raise
+            else:
+                break
     
         omegasqsc=np.real(omegasqsc)
     
