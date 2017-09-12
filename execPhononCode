@@ -1,13 +1,15 @@
 #!/bin/bash
-#PBS -N ge1.4_test_TheCOUP
+#PBS -N Test_TheCoup
 #PBS -j oe
+#PBS -M felix.therrien@gmail.com
+#PBS -m ae
 ##PBS -l feature=haswell
-#PBS -l nodes=21:ppn=24
-#PBS -q large
+#PBS -l nodes=8:ppn=24
+#PBS -q short
 #PBS -A NRELMatDB
-#PBS -l walltime=03:00:00
+#PBS -l walltime=00:10:00
 
-cd /scratch/felixt/PhononCode/runs/ge1/
+cd /scratch/felixt/PhononCode/
 
 PHONPATH=/scratch/felixt/PhononCode
 
@@ -15,21 +17,21 @@ cp PHONON.out $(mktemp -u PHONON.old.XXXXX)
 
 #mpirun -np 501 python3 $PHONPATH/PhononCode.py -n 1000 -E 2600 -w 0.001 -o ge1.4_0 > ge1.4_0.log
 
-for s in 1
-do
-    for i in 0 $(seq 20)
-    do
-        for ve in 0.1 0.5 2 10
-	do
-	    vs=$(echo "${ve}/2" | bc -l)
-            if [ $i == "0" ]
-		    then
-		c="0.001"
-		    else
-		        c=$(echo "0.005*${i}" | bc -l)
-	    fi
-            mpirun -np 501 python3 $PHONPATH/PhononCode.py -n 1000 -E 2600 -w 0.001 -d -t random -v [[${ve},${ve}],${vs}] -m [1] -c ${c} -r 5 -o ge1.4_${c}-${ve} > ge1.4_${c}-${ve}.log
-        done
-        echo -e "" >> PHONON.out
-    done
-done
+# for s in 1
+# do
+#     for i in 0 $(seq 20)
+#     do
+#         for ve in 0.1 0.5 2 10
+# 	do
+# 	    vs=$(echo "${ve}/2" | bc -l)
+#             if [ $i == "0" ]
+# 		    then
+# 		c="0.001"
+# 		    else
+# 		        c=$(echo "0.005*${i}" | bc -l)
+# 	    fi
+            mpirun -np 192 python3 $PHONPATH/PhononCode.py -n 384 -E 500 -w 0.01 -d -t random -v [[1,1],1] -m [2] -c 0.1 -r 1 -o testdir > testres
+#         done
+#         echo -e "" >> PHONON.out
+#     done
+# done
