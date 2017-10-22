@@ -11,6 +11,15 @@ import sys
 import pickle
 import re
 
+# Initial MPI calls
+comm = MPI.COMM_WORLD
+master = 0
+n_proc = comm.Get_size()
+rank = comm.Get_rank()
+
+#Constant
+hbar_kb = 7.63824*10**(-12) #second kelvins
+
 def cell(s):
     if (s[0]=="[") and (s[-1]=="]"):
         try:
@@ -136,7 +145,7 @@ def resetColors():
 def gaussErr(w,nE):
     return 1.1**3 / (12*np.sqrt(np.pi) * w**3 * nE**2)
 
-if __name__=="__main__":
+def readOptions():
     
     parser = argparse.ArgumentParser()
     parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primitive cell")
@@ -161,32 +170,11 @@ if __name__=="__main__":
     
     options = parser.parse_args()
     
-    # Initial calls
-    comm = MPI.COMM_WORLD
-    master = 0
-    n_proc = comm.Get_size()
-    rank = comm.Get_rank()
-    
-    # Display initialisation
-    
-    if options.disp:
-        import matplotlib.pyplot as plt
-        plt.close("all")
-        plt.ioff
-    else:
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-        plt.rcParams.update({'figure.max_open_warning': 0})
-    
-    
     ## PARAMETERS #######################################################################
-    c=1 #Interatomic spacing
+    show = options.disp
     nb = options.nb #Number of particles per primitive cell
     n = options.n #Initial number of primitive cell in super cell
     nE = options.nE #Number of energy values on scale
-    Na = 1 #Total number of SC in B-vKC
-    Nb = n #Total number of PC in B-vKC
-    Nc = n*nb #Total number of atoms in Born-von Karman cell
     T = options.T #Temperature in Kelvin
     repeat = options.repeat
     avg = options.avg
@@ -215,6 +203,7 @@ if __name__=="__main__":
     clusterSize = options.clusterSize
     mval = np.array(options.mval)
     kval = options.kval
+    print(mval,kval) #TMP
     if defects:
         for im,m in enumerate(mval):
             if len(kval[im][-1])+1 != len(m):
@@ -225,12 +214,7 @@ if __name__=="__main__":
     
     #Images output folder
     folder = options.folder+"/"
-    namestamp = "phon"
     
-    #Constant
-    hbar_kb=7.63824*10**(-12) #second kelvins
-    
-    ## PARAMETERS #######################################################################
     if rank==master:
         if (not os.path.exists(folder)):
             os.mkdir(folder)
@@ -239,16 +223,60 @@ if __name__=="__main__":
         f = open(folder+"PARAM.out", 'w')
         print(options,file=f)
         f.close()
+
+        args= (n, nb, nE, T, V, Mvec,
+               defects, DefConc, dtype, mval, kval, ClusterSize,
+               gaussian, w, repeat, avg, CutOffErr,
+               folder, show)
+        return args
+
+def PhononCode(n, nb, nE, T, V, Mvec,
+               defects, DefConc, dtype, mval, kval, ClusterSize,
+               gaussian, w, repeat, avg, CutOffErr,
+               folder, show,
+               customOccPos = None):
     
-        # Timing
-        t_total_i = time.time()
+    # Paramaters 
+
+    c = 1 #Interatomic spacing
+    Na = 1 #Total number of SC in B-vKC
+    Nb = n #Total number of PC in B-vKC
+    Nc = n*nb #Total number of atoms in Born-von Karman cell
+    namestamp = "phon"
+
+    # Consisitancy check
     
-    #Errors -----------------------------------------------------------------------------
+    if defects:
+        for im,m in enumerate(mval):
+            if len(kval[im][-1])+1 != len(m):
+                raise argparse.ArgumentTypeError("The defect mass and potential should be the same size")
+
+    # Make output directory if it doesn't exist
+    
+    if rank==master:
+        if (not os.path.exists(folder)):
+            os.mkdir(folder)
+
+    # Timing
+    t_total_i = time.time()
+
+    # Display initialisation
+    
+    if show:
+        import matplotlib.pyplot as plt
+        plt.close("all")
+        plt.ioff
+    else:
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+        plt.rcParams.update({'figure.max_open_warning': 0})
+    
+    #Errors
     
     MacPrecErr= 2*np.finfo(float).eps
     GaussErr = gaussErr(w,nE)
     
-    #Primitive Cell ---------------------------------------------------------------------
+    #Primitive Cell -
     b=nb*c #Size of lattice
     M = np.diag(Mvec, 0)
     
@@ -304,36 +332,8 @@ if __name__=="__main__":
                         pos = mu
 
                     if dtype[i] == "custom":
-                        occpos = [0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,0,0,0,1,0,0,0,0,0,0,0,1,1
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,1,0
-                                  ,1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,0,0,0
-                                  ,0,0,0,1,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,1,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0
-                                  ,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0
-                                  ,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-                                  ,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
-,0]
-
-                        pos = np.nonzero(occpos==1)[0]
+                        pos = np.nonzero(customOccPos==(i+1))[0]
+                        occpos[pos] = i+1
     
                     nextp = pos + 1
                     nextp[nextp==n]=0
@@ -453,6 +453,7 @@ if __name__=="__main__":
     if avg:
         nE_list = []
         E_list = []
+        nEOriginal = int(nE)
     else:
         MaxOmegasc = 0
         for rep in range(repeat):
@@ -475,7 +476,7 @@ if __name__=="__main__":
         eigenvecsc = eigenvecsc_list[rep]
     
         if avg:
-            nE = options.nE
+            nE = int(nEOriginal)
             tol = omegasc.max()*1.1/(2*(nE-1)) #Tolerence for equality
             dE = omegasc.max()*1.1/(nE-1)
             sig = w*omegasc.max()
@@ -870,6 +871,9 @@ if __name__=="__main__":
         print('Final loop and display time', t_total_f-t_q_f)
         print('Total elapsed time:', t_total_f-t_total_i)
     
-        if options.disp:
+        if show:
             plt.show()
+
+if __name__ == "__main__":
+    PhononCode(*readOptions())
     
