@@ -136,7 +136,7 @@ def allgatherv(A):
     Alist = comm.allgather(A)
     return [sub_elem for elem in Alist for sub_elem in elem]
 
-def resetColors():
+def resetColors(plt):
     try:
         plt.gca().set_prop_cycle(None)
     except:
@@ -146,95 +146,106 @@ def gaussErr(w,nE):
     return 1.1**3 / (12*np.sqrt(np.pi) * w**3 * nE**2)
 
 def readOptions():
-    
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primitive cell")
-    parser.add_argument("-n","--scsize",dest="n", type=int, default=50, help="Number of primitive cell in super cell")
-    parser.add_argument("-E","--energy",dest="nE", type=int, default=600, help="Number of energy values on scale")
-    parser.add_argument("-T","--temp",dest="T", type=float, default=300, help="Temperature")
-    parser.add_argument("-V","--potentials",dest="V", type=cell, default=[1], help="List of potential strenghts of size nb")
-    parser.add_argument("-M","--masses",dest="Mvec", type=cell, default=[1], help="List of masses of size nb")
-    parser.add_argument("-g","--noGauss",dest="gaussian", action="store_false", default=True, help="Energy bands with minimum gaussian width")
-    parser.add_argument("-u","--cutOffErr",dest="CutOffErr", type=float, default=10**-4, help="Value at witch a band is considered to be negligable")
-    parser.add_argument("-w","--width",dest="w", default=-1, type=float, help="Standard deviation (width) of gaussian")
-    parser.add_argument("-d","--defects",dest="defects", action="store_true", default=False, help="Adds defects in super cell")
-    parser.add_argument("-t","--dtype",dest="dtype",nargs='+', type=str, default=["random"], help="Available types: ordered, random, cluster")
-    parser.add_argument("-s","--cluster",dest="clusterSize",nargs='+',type=float, default=[3], help="Size factor for clustered defects")
-    parser.add_argument("-m","--dmasses",dest="mval",nargs='+',type=cell, default=[[2]], help="Mass of defects")
-    parser.add_argument("-v","--dpotentials",dest="kval",nargs='+',type=bonds, default = [[np.array([[ 2,  2],[  1,   1]]), []]], help="Potential strenghts of defects")
-    parser.add_argument("-c","--defConc",dest="DefConc",nargs='+',type=float, default=[0.05], help="Concentration of defect")
-    parser.add_argument("-o","--out",dest="folder",type=str, default="images", help="Output folder for images")
-    parser.add_argument("-i","--display",dest="disp",action="store_true", default=False, help="Display generated plots plots")
-    parser.add_argument("-r","--repeat",dest="repeat",type=int, default=1, help="Number of time to reapeat run and average")
-    parser.add_argument("-a","--Eaverage",dest="avg",action="store_true", default=False, help="Use this flag to average on E and delta E instead of Sf")
-    
-    options = parser.parse_args()
-    
-    ## PARAMETERS #######################################################################
-    show = options.disp
-    nb = options.nb #Number of particles per primitive cell
-    n = options.n #Initial number of primitive cell in super cell
-    nE = options.nE #Number of energy values on scale
-    T = options.T #Temperature in Kelvin
-    repeat = options.repeat
-    avg = options.avg
-    
-    # Potential
-    V=np.array(options.V)*(1+0*1j) #Potential vector (without defects)
-    # Masses
-    Mvec = np.array(options.Mvec) # Mass vector (without defects)
-    
-    gaussian = options.gaussian # Gaussian minimal width
-    CutOffErr=options.CutOffErr # Cuttoff value for energy difference
-    if options.w == -1:
-        w = 1/n # width of gaussian in fraction of the max energy
-    else:
-        w = options.w
-    # Good width: 0.035
-    
-    defects = options.defects
-    #Presence of defects
-    # dtypes:
-    # ordered: will repeat defect periodically to obtain DefConc, if multiple defect types are specified they will be
-    # stacked next to each other and will have the same concentration other concentrations will be ignored
-    # random: defects are scattered randomly in the supercell, different types of defects can have different concentrations
-    # cluster: defects are have higher probability to be near another defect, the location of the first defect is random. The clusterSize variable controls the standanrd deviation of the density of probability
-    dtype = options.dtype
-    clusterSize = options.clusterSize
-    mval = np.array(options.mval)
-    kval = options.kval
-    print(mval,kval) #TMP
-    if defects:
-        for im,m in enumerate(mval):
-            if len(kval[im][-1])+1 != len(m):
-                raise argparse.ArgumentTypeError("The defect mass and potential should be the same size")
-        DefConc = options.DefConc #concentratation of defects
-    else:
-        DefConc = [0]
-    
-    #Images output folder
-    folder = options.folder+"/"
-    
+
     if rank==master:
+    
+        parser = argparse.ArgumentParser()
+        parser.add_argument("-b","--pcsize",dest="nb",type=int, default=1, help="Size of primitive cell")
+        parser.add_argument("-n","--scsize",dest="n", type=int, default=50, help="Number of primitive cell in super cell")
+        parser.add_argument("-E","--energy",dest="nE", type=int, default=600, help="Number of energy values on scale")
+        parser.add_argument("-T","--temp",dest="T", type=float, default=300, help="Temperature")
+        parser.add_argument("-V","--potentials",dest="V", type=cell, default=[1], help="List of potential strenghts of size nb")
+        parser.add_argument("-M","--masses",dest="Mvec", type=cell, default=[1], help="List of masses of size nb")
+        parser.add_argument("-g","--noGauss",dest="gaussian", action="store_false", default=True, help="Energy bands with minimum gaussian width")
+        parser.add_argument("-u","--cutOffErr",dest="CutOffErr", type=float, default=10**-4, help="Value at witch a band is considered to be negligable")
+        parser.add_argument("-w","--width",dest="w", default=-1, type=float, help="Standard deviation (width) of gaussian")
+        parser.add_argument("-d","--defects",dest="defects", action="store_true", default=False, help="Adds defects in super cell")
+        parser.add_argument("-t","--dtype",dest="dtype",nargs='+', type=str, default=["random"], help="Available types: ordered, random, cluster")
+        parser.add_argument("-s","--cluster",dest="clusterSize",nargs='+',type=float, default=[3], help="Size factor for clustered defects")
+        parser.add_argument("-m","--dmasses",dest="mval",nargs='+',type=cell, default=[[2]], help="Mass of defects")
+        parser.add_argument("-v","--dpotentials",dest="kval",nargs='+',type=bonds, default = [[np.array([[ 2,  2],[  1,   1]]), []]], help="Potential strenghts of defects")
+        parser.add_argument("-c","--defConc",dest="DefConc",nargs='+',type=float, default=[0.05], help="Concentration of defect")
+        parser.add_argument("-o","--out",dest="folder",type=str, default="images", help="Output folder for images")
+        parser.add_argument("-i","--display",dest="disp",action="store_true", default=False, help="Display generated plots plots")
+        parser.add_argument("-r","--repeat",dest="repeat",type=int, default=1, help="Number of time to reapeat run and average")
+        parser.add_argument("-a","--Eaverage",dest="avg",action="store_true", default=False, help="Use this flag to average on E and delta E instead of Sf")
+        
+        options = parser.parse_args()
+        
+        ## PARAMETERS #######################################################################
+        show = options.disp
+        nb = options.nb #Number of particles per primitive cell
+        n = options.n #Initial number of primitive cell in super cell
+        nE = options.nE #Number of energy values on scale
+        T = options.T #Temperature in Kelvin
+        repeat = options.repeat
+        avg = options.avg
+        
+        # Potential
+        V=np.array(options.V)*(1+0*1j) #Potential vector (without defects)
+        # Masses
+        Mvec = np.array(options.Mvec) # Mass vector (without defects)
+        
+        gaussian = options.gaussian # Gaussian minimal width
+        CutOffErr=options.CutOffErr # Cuttoff value for energy difference
+        if options.w == -1:
+            w = 1/n # width of gaussian in fraction of the max energy
+        else:
+            w = options.w
+        # Good width: 0.035
+        
+        defects = options.defects
+        #Presence of defects
+        # dtypes:
+        # ordered: will repeat defect periodically to obtain DefConc, if multiple defect types are specified they will be
+        # stacked next to each other and will have the same concentration other concentrations will be ignored
+        # random: defects are scattered randomly in the supercell, different types of defects can have different concentrations
+        # cluster: defects are have higher probability to be near another defect, the location of the first defect is random. The clusterSize variable controls the standanrd deviation of the density of probability
+        dtype = options.dtype
+        clusterSize = options.clusterSize
+        mval = np.array(options.mval)
+        kval = options.kval
+        if defects:
+            for im,m in enumerate(mval):
+                if len(kval[im][-1])+1 != len(m):
+                    raise argparse.ArgumentTypeError("The defect mass and potential should be the same size")
+            DefConc = options.DefConc #concentratation of defects
+        else:
+            DefConc = [0]
+        
+        #Images output folder
+        folder = options.folder+"/"
+        
         if (not os.path.exists(folder)):
             os.mkdir(folder)
-    
+        
         # Writting PARAM.out
         f = open(folder+"PARAM.out", 'w')
         print(options,file=f)
         f.close()
-
+        
         args= (n, nb, nE, T, V, Mvec,
-               defects, DefConc, dtype, mval, kval, ClusterSize,
-               gaussian, w, repeat, avg, CutOffErr,
-               folder, show)
-        return args
+                   defects, DefConc, dtype, mval, kval, clusterSize,
+                   gaussian, w, repeat, avg, CutOffErr,
+                   folder, show)
+    else:
+        args=(None,)    
 
-def PhononCode(n, nb, nE, T, V, Mvec,
-               defects, DefConc, dtype, mval, kval, ClusterSize,
-               gaussian, w, repeat, avg, CutOffErr,
-               folder, show,
-               customOccPos = None):
+    return args
+
+def PhononCode(*args):
+
+    if rank == master:
+        if len(args)==19:
+            args = args+(None,True)
+        if len(args)==20:
+            args = args+(True,)
+        elif len(args)<19:
+            raise NameError('Missing arguments!')
+        elif len(args)>21:
+            raise NameError('Too many arguments!')
+        
+    n, nb, nE, T, V, Mvec, defects, DefConc, dtype, mval, kval, clusterSize,gaussian, w, repeat, avg, CutOffErr,folder, show, customOccPos, output = comm.bcast(args)
     
     # Paramaters 
 
@@ -261,15 +272,15 @@ def PhononCode(n, nb, nE, T, V, Mvec,
     t_total_i = time.time()
 
     # Display initialisation
-    
-    if show:
-        import matplotlib.pyplot as plt
-        plt.close("all")
-        plt.ioff
-    else:
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-        plt.rcParams.update({'figure.max_open_warning': 0})
+    if output:
+        if show:
+            import matplotlib.pyplot as plt
+            plt.close("all")
+            plt.ioff
+        else:
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            plt.rcParams.update({'figure.max_open_warning': 0})
     
     #Errors
     
@@ -325,7 +336,7 @@ def PhononCode(n, nb, nE, T, V, Mvec,
                                 posk = rd.sample(availpos,1)[0]
                             else:
                                 if k == ndefects-1:
-                                    graph = True
+                                    graph = True and output
                                 posk = invCumulFunc(folder,namestamp,graph,n,occpos,mu,clusterSize[i]**2,rd.random())
                             mu = np.append(mu,posk)
                             occpos[posk] = i+1
@@ -439,7 +450,7 @@ def PhononCode(n, nb, nE, T, V, Mvec,
     if defects:
         occpos_list = gatherv(occpos_local)
     
-        if rank==master:
+        if rank==master and output:
             print('defect layout')
             for rep in range(repeat):
                 print(occpos_list[rep])
@@ -604,11 +615,12 @@ def PhononCode(n, nb, nE, T, V, Mvec,
             #print('Total times for Loop in i=', t_i_loop)
             t_q_f = time.time()
             Local_qLoopTimes.append(t_q_f - t_q_i)
-            print("Finished %d of run %d in core %d in %f seconds"%(iq,rep,rank,t_q_f - t_q_i))
-            #print('Energy loop time=',t_q_f-t_energy_loop)
-            #print('System solve + GS proces=', -t_q_i + t_energy_loop)
+            if output:
+                print("Finished %d of run %d in core %d in %f seconds"%(iq,rep,rank,t_q_f - t_q_i))
+                #print('Energy loop time=',t_q_f-t_energy_loop)
+                #print('System solve + GS proces=', -t_q_i + t_energy_loop)
         
-            #print('-------------------------------------------------')
+                #print('-------------------------------------------------')
         
         Global_omegadisp.append(comm.allgather(Local_omegadisp))
         Global_Sf.append(comm.allgather(Local_Sf))
@@ -635,41 +647,43 @@ def PhononCode(n, nb, nE, T, V, Mvec,
         # Save resulting matrix
         pickle.dump( Sf, open( folder+"Sf_%d.dat"%rep, "wb" ) )
         pickle.dump( Sftotal, open( folder+"Sftotal_%d.dat"%rep, "wb" ) )
+
+        if output:
+        
+            if rep==0:
+                plt.figure()
+                plt.plot(q,omegadisp.T,'.')
+                plt.ylabel(r'Angular Frequency($\omega$)')
+                plt.xlabel('Wave vector(q)')
+                plt.title("Primitive cell band structure")
+                plt.savefig(folder+"primitive_band_"+namestamp+".png")
     
-        if rep==0:
+            Sf[Sf<MacPrecErr]=0
+    
             plt.figure()
-            plt.plot(q,omegadisp.T,'.')
+            plt.imshow(np.sum(Sf,0), interpolation='None', origin='lower',
+                       cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
             plt.ylabel(r'Angular Frequency($\omega$)')
             plt.xlabel('Wave vector(q)')
-            plt.title("Primitive cell band structure")
-            plt.savefig(folder+"primitive_band_"+namestamp+".png")
+            plt.title("Total band")
+            plt.savefig(folder+"spectral_map_%d_"%rep+namestamp+".png")
     
-        Sf[Sf<MacPrecErr]=0
-    
-        plt.figure()
-        plt.imshow(np.sum(Sf,0), interpolation='None', origin='lower',
-                        cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
-        plt.ylabel(r'Angular Frequency($\omega$)')
-        plt.xlabel('Wave vector(q)')
-        plt.title("Total band")
-        plt.savefig(folder+"spectral_map_%d_"%rep+namestamp+".png")
-    
-        for s in range(nb):
-            plt.figure()
-            #plt.imshow(Sf, aspect=1, interpolation='none', cmap=plt.get_cmap('Greys'),
-            #                origin='lower', extent=[q.min(), q.max(), E.min(), E.max()],
-            #                vmax=1, vmin=0)
-            # inter: lanczos
-            plt.imshow(Sf[s,:,:], interpolation='None', origin='lower',
-                            cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
-            plt.ylabel(r'Angular Frequency($\omega$)')
-            plt.xlabel('Wave vector (q)')
-            plt.title("Band %d"%s)
-            plt.savefig(folder+"band_%d_spectral_map_%d_"%(s,rep)+namestamp+".png")
+            for s in range(nb):
+                plt.figure()
+                #plt.imshow(Sf, aspect=1, interpolation='none', cmap=plt.get_cmap('Greys'),
+                #                origin='lower', extent=[q.min(), q.max(), E.min(), E.max()],
+                #                vmax=1, vmin=0)
+                # inter: lanczos
+                plt.imshow(Sf[s,:,:], interpolation='None', origin='lower',
+                           cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
+                plt.ylabel(r'Angular Frequency($\omega$)')
+                plt.xlabel('Wave vector (q)')
+                plt.title("Band %d"%s)
+                plt.savefig(folder+"band_%d_spectral_map_%d_"%(s,rep)+namestamp+".png")
             
-        if rep == 0:
-            print('Primitive Cell Frequencies')
-            print(omegadisp)
+                if rep == 0:
+                    print('Primitive Cell Frequencies')
+                    print(omegadisp)
     
         #lifetime calculations -------------------------------------------------------------------------------------------------
     
@@ -717,46 +731,48 @@ def PhononCode(n, nb, nE, T, V, Mvec,
             Sf=0
             for rep in range(repeat):
                 Sf = Sf + Sf_list[rep]/repeat
-    
-            # Averaged SF display and saving
-            # Save resulting matrix
-            pickle.dump( Sf, open( folder+"Sf_avg.dat", "wb" ) )
-            pickle.dump( E, open( folder+"E.dat", "wb" ) )
-    
+
             Sf[Sf<MacPrecErr]=0
+
+            if output:
     
-            plt.figure()
-            plt.imshow(np.sum(Sf,0), interpolation='None', origin='lower',
-                       cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
-            plt.ylabel(r'Angular Frequency($\omega$)')
-            plt.xlabel('Wave vector(q)')
-            plt.title("Total band")
-            plt.savefig(folder+"spectral_map_avg_"+namestamp+".png")
-            
-            for s in range(nb):
+                # Averaged SF display and saving
+                # Save resulting matrix
+                pickle.dump( Sf, open( folder+"Sf_avg.dat", "wb" ) )
+                pickle.dump( E, open( folder+"E.dat", "wb" ) )
+    
                 plt.figure()
-                plt.imshow(Sf[s,:,:], interpolation='None', origin='lower',
+                plt.imshow(np.sum(Sf,0), interpolation='None', origin='lower',
                            cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
                 plt.ylabel(r'Angular Frequency($\omega$)')
-                plt.xlabel('Wave vector (q)')
-                plt.title("Band %d"%s)
-                plt.savefig(folder+"band_%d_spectral_map_avg_"%s+namestamp+".png")
+                plt.xlabel('Wave vector(q)')
+                plt.title("Total band")
+                plt.savefig(folder+"spectral_map_avg_"+namestamp+".png")
+            
+                for s in range(nb):
+                    plt.figure()
+                    plt.imshow(Sf[s,:,:], interpolation='None', origin='lower',
+                           cmap=plt.cm.spectral_r,aspect='auto',extent=[q.min(), q.max(), E.min(), E.max()],vmax=1, vmin=0)
+                    plt.ylabel(r'Angular Frequency($\omega$)')
+                    plt.xlabel('Wave vector (q)')
+                    plt.title("Band %d"%s)
+                    plt.savefig(folder+"band_%d_spectral_map_avg_"%s+namestamp+".png")
     
     
-            plt.figure()
-            plt.plot(E, Sf[:,:, 0].T, '.-')
-            plt.ylabel('Spectral function (a.u.)')
-            plt.xlabel(r'Angular Frequency($\omega$)')
-            plt.title("Slice of the spectral map at q=0")
-            ax = plt.gca()
-            ymin, ymax = ax.get_ylim()
-            deltalist = deltalist / max(deltalist)
-            for npE in range(len(E)):
-                ax.vlines(x=E[npE], ymin=ymin, ymax=ymax, color='r', alpha=deltalist[npE])
-            plt.ylim([ymin, ymax])
-            plt.plot(E,deltalist*ymax, color='r')
+                plt.figure()
+                plt.plot(E, Sf[:,:, 0].T, '.-')
+                plt.ylabel('Spectral function (a.u.)')
+                plt.xlabel(r'Angular Frequency($\omega$)')
+                plt.title("Slice of the spectral map at q=0")
+                ax = plt.gca()
+                ymin, ymax = ax.get_ylim()
+                deltalist = deltalist / max(deltalist)
+                for npE in range(len(E)):
+                    ax.vlines(x=E[npE], ymin=ymin, ymax=ymax, color='r', alpha=deltalist[npE])
+                plt.ylim([ymin, ymax])
+                plt.plot(E,deltalist*ymax, color='r')
     
-            plt.savefig(folder+"slice_0_avg_"+namestamp+".png")
+                plt.savefig(folder+"slice_0_avg_"+namestamp+".png")
                 
             EAvg = np.zeros((nb, len(q)))
             EsqAvg = np.zeros((nb, len(q)))
@@ -782,43 +798,44 @@ def PhononCode(n, nb, nE, T, V, Mvec,
         # print('Super Cell Frequencies')
         # for rep in range(repeat):
         #     print(omegasc_list[rep])
-        print('Validation')
-        for s in range(nb):
-            print('Band %d'%s)
-            print(np.sum(Sf[s,:,:],0))
-        print('Max Error')
-        MaxErr = np.max(abs(nb-np.sum(np.sum(Sf,0),0)))
+        if output:
+            print('Validation')
+            for s in range(nb):
+                print('Band %d'%s)
+                print(np.sum(Sf[s,:,:],0))
+                print('Max Error')
+            MaxErr = np.max(abs(nb-np.sum(np.sum(Sf,0),0)))
         
-        print(MaxErr)
-        print('Gaussian Error estimation')
-        print(GaussErr)
+            print(MaxErr)
+            print('Gaussian Error estimation')
+            print(GaussErr)
     
-        # Display
-        plt.figure()
-        plt.plot(q,EAvg.T)
-        resetColors()
-        for s in range(nb):
-            plt.fill_between(q, EAvg[s, :] - DeltaE[s, :], EAvg[s, :] + DeltaE[s, :],alpha=0.2)
-        resetColors()    
-        plt.plot(q,omegadisp.T,'--')
-        plt.ylabel(r'Angular Frequency($\omega$)')
-        plt.xlabel('Wave vector (q)')
-        plt.title("Average frequency and standard deviation")
-        plt.savefig(folder+"omega_q_"+namestamp+".png")
+            # Display
+            plt.figure()
+            plt.plot(q,EAvg.T)
+            resetColors(plt)
+            for s in range(nb):
+                plt.fill_between(q, EAvg[s, :] - DeltaE[s, :], EAvg[s, :] + DeltaE[s, :],alpha=0.2)
+            resetColors(plt)    
+            plt.plot(q,omegadisp.T,'--')
+            plt.ylabel(r'Angular Frequency($\omega$)')
+            plt.xlabel('Wave vector (q)')
+            plt.title("Average frequency and standard deviation")
+            plt.savefig(folder+"omega_q_"+namestamp+".png")
     
-        plt.figure()
-        plt.plot(q,Tau.T)
-        plt.ylabel(r'Lifetime($\tau$)')
-        plt.xlabel('Wave vector (q)')
-        plt.title("Lifetime")
-        plt.savefig(folder+"tau_q_"+namestamp+".png")
-    
-        plt.figure()
-        plt.plot(EAvg.T,Tau.T)
-        plt.ylabel(r'Lifetime($\tau$)')
-        plt.xlabel(r'Angular Frequency($\omega$)')
-        plt.title("Lifetime")
-        plt.savefig(folder+"tau_w_"+namestamp+".png")
+            plt.figure()
+            plt.plot(q,Tau.T)
+            plt.ylabel(r'Lifetime($\tau$)')
+            plt.xlabel('Wave vector (q)')
+            plt.title("Lifetime")
+            plt.savefig(folder+"tau_q_"+namestamp+".png")
+            
+            plt.figure()
+            plt.plot(EAvg.T,Tau.T)
+            plt.ylabel(r'Lifetime($\tau$)')
+            plt.xlabel(r'Angular Frequency($\omega$)')
+            plt.title("Lifetime")
+            plt.savefig(folder+"tau_w_"+namestamp+".png")
     
         # Lattice Thermal Conductivity -----------------------------------------------------------------------------------------
         dq = 2*np.pi/a
@@ -830,49 +847,53 @@ def PhononCode(n, nb, nE, T, V, Mvec,
         v[:,1:-1] = 1/dq*1/2*(EAvg[:,2:]-EAvg[:,:-2])
         v[:,0] = 1/dq*(2*EAvg[:,1]-3/2*EAvg[:,0]-1/2*EAvg[:,2])
         v[:,-1] = 1/dq*(-2*EAvg[:,-2]+3/2*EAvg[:,-1]+1/2*EAvg[:,-3])
-    
-        plt.figure()
-        plt.plot(q,(1/Vol*C*v**2*Tau).T)
-        plt.ylabel(r'LTC($\kappa$)')
-        plt.xlabel('Wave vector (q)')
-        plt.title("Lattice Thermal Conductivity")
-        plt.savefig(folder+"Kappa_q_"+namestamp+".png")
+
+        if output:
+            plt.figure()
+            plt.plot(q,(1/Vol*C*v**2*Tau).T)
+            plt.ylabel(r'LTC($\kappa$)')
+            plt.xlabel('Wave vector (q)')
+            plt.title("Lattice Thermal Conductivity")
+            plt.savefig(folder+"Kappa_q_"+namestamp+".png")
     
         k = 1/Vol*np.sum(C*v**2*Tau,1)
         LTC = np.sum(k)
+
+        if output:
+            print("##################################################")
+            print("Total Lattice Thermal Conductivity:", LTC)
+            for s in range(nb):
+                print("Band %d contribution:"%s, k[s])
+            print("--------------------------------------------------")
+            print("Prameters:")
+            print("Specific Heat (C):", C)
+            print("Group velocity (v):", v)
+            print("Relaxation Time (Tau):", Tau)
+            print("##################################################")
     
-        print("##################################################")
-        print("Total Lattice Thermal Conductivity:", LTC)
-        for s in range(nb):
-            print("Band %d contribution:"%s, k[s])
-        print("--------------------------------------------------")
-        print("Prameters:")
-        print("Specific Heat (C):", C)
-        print("Group velocity (v):", v)
-        print("Relaxation Time (Tau):", Tau)
-        print("##################################################")
+            # Writting to file
+            f = open('PHONON.out', 'a')
+            printdtype = ' '.join([str(i) for i in dtype])
+            printclusterSize = ' '.join([str(i) for i in clusterSize])
+            printdefconc = ' '.join([str(i) for i in DefConc])
+            printmass = ' '.join([str(i) for i in Mvec])
+            printpot = ' '.join([str(i) for i in np.real(V)])
+            printdpot = ' '.join([' '.join([str(C) for B in A[0] for C in B])+' '+' '.join([str(B) for B in A[1]]) for A in kval])
+            printdmass = ' '.join([' '.join([str(j) for j in i]) for i in mval])
+            print(printmass,' ',printpot,' ',printdefconc,' ',printdtype,' ',printclusterSize,' ',printdpot,' ',printdmass,' ',LTC, file=f)
+            f.close
     
-        # Writting to file
-        f = open('PHONON.out', 'a')
-        printdtype = ' '.join([str(i) for i in dtype])
-        printclusterSize = ' '.join([str(i) for i in clusterSize])
-        printdefconc = ' '.join([str(i) for i in DefConc])
-        printmass = ' '.join([str(i) for i in Mvec])
-        printpot = ' '.join([str(i) for i in np.real(V)])
-        printdpot = ' '.join([' '.join([str(C) for B in A[0] for C in B])+' '+' '.join([str(B) for B in A[1]]) for A in kval])
-        printdmass = ' '.join([' '.join([str(j) for j in i]) for i in mval])
-        print(printmass,' ',printpot,' ',printdefconc,' ',printdtype,' ',printclusterSize,' ',printdpot,' ',printdmass,' ',LTC, file=f)
-        f.close
+            t_total_f = time.time()
     
-        t_total_f = time.time()
+            print('done')
+            print('Initial loop time',t_total_q - t_total_i)
+            print('Final loop and display time', t_total_f-t_q_f)
+            print('Total elapsed time:', t_total_f-t_total_i)
     
-        print('done')
-        print('Initial loop time',t_total_q - t_total_i)
-        print('Final loop and display time', t_total_f-t_q_f)
-        print('Total elapsed time:', t_total_f-t_total_i)
-    
-        if show:
-            plt.show()
+            if show:
+                plt.show()
+
+        return LTC
 
 if __name__ == "__main__":
     PhononCode(*readOptions())
