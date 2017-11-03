@@ -638,17 +638,17 @@ def PhononCode(*args):
         if avg:
             nE = nE_list[rep]
             E = E_list[rep]
-            pickle.dump( E, open( folder+"E_%d.dat"%rep, "wb" ) )
+            if output:
+                pickle.dump( E, open( folder+"E_%d.dat"%rep, "wb" ) )
 
         omegadisp = np.concatenate(Global_omegadisp[rep],1)
         Sf = np.concatenate(Global_Sf[rep],2)
         Sftotal = np.concatenate(Global_Sftotal[rep],1)
     
-        # Save resulting matrix
-        pickle.dump( Sf, open( folder+"Sf_%d.dat"%rep, "wb" ) )
-        pickle.dump( Sftotal, open( folder+"Sftotal_%d.dat"%rep, "wb" ) )
-
         if output:
+            # Save resulting matrix
+            pickle.dump( Sf, open( folder+"Sf_%d.dat"%rep, "wb" ) )
+            pickle.dump( Sftotal, open( folder+"Sftotal_%d.dat"%rep, "wb" ) )
         
             if rep==0:
                 plt.figure()
