@@ -4,16 +4,20 @@ import PhononCode as pc
 from mpi4py import MPI
 import matplotlib.pyplot as plt
 
+
 # Initial MPI calls
 comm = MPI.COMM_WORLD
 master = 0
 n_proc = comm.Get_size()
 rank = comm.Get_rank()
 
+if rank==master:
+    totalTime = time.time()
+
 # Fixed PhononCode params
-n = 40
+n = 500
 nb = 1
-nE = 20
+nE = 500
 T = 300
 V = np.array([1])*(1+0*1j)
 Mvec = np.array([1])
@@ -24,7 +28,7 @@ mval = np.array([[2]])
 kval = [[np.array([[ 1,  1], [ 1,  1]]), []]]
 clusterSize = [1]
 gaussian = True
-w = 1/n
+w = 0.003
 repeat=1
 avg=False
 CutOffErr = 1e-4
@@ -49,6 +53,8 @@ layout[np.random.choice(np.arange(0,n), nDefect, replace=False)] = 1
 LTCplot = np.zeros(numIter)
 LTCmin = np.Inf
 layouts = []
+
+print(pc.gaussErr(w,nE)) #TMP
 
 for i in range(numIter):
 
@@ -78,14 +84,18 @@ for i in range(numIter):
 
 if rank == master:
     plt.plot(LTCplot)
-    print(layouts[np.argmin(LTCplot)])
-    print(LTCplot[np.argmin(LTCplot)])
+    print('Best laytout:', layouts[np.argmin(LTCplot)])
+    print('Lowest LTC:', LTCplot[np.argmin(LTCplot)])
+    totalTime = time.time() - totalTime
+    print('Total optimisation time: %f'%totalTime)
     layout = layouts[np.argmin(LTCplot)]
     plt.show()
-    
+
 LTC = pc.PhononCode(*args,layout,True)
 
 LTC = pc.PhononCode(n, nb, nE, T, V, Mvec,
         defects, DefConc, ["ordered"], mval, kval, clusterSize,
         gaussian, w, repeat, avg, CutOffErr,
         folder, show)
+
+
