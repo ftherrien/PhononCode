@@ -13,26 +13,27 @@ rank = comm.Get_rank()
 
 if rank==master:
     totalTime = time.time()
+    iterTime = time.time()
 
 # Fixed PhononCode params
-n = 500
+n = 100
 nb = 1
-nE = 500
+nE = 100
 T = 300
 V = np.array([1])*(1+0*1j)
 Mvec = np.array([1])
 defects = True
-DefConc = [0.5]
+DefConc = [0.3]
 dtype = ["custom"]
 mval = np.array([[2]])
 kval = [[np.array([[ 1,  1], [ 1,  1]]), []]]
 clusterSize = [1]
 gaussian = True
-w = 0.003
+w = 0.01
 repeat=1
 avg=False
 CutOffErr = 1e-4
-folder = 'StatMecProj'
+folder = 'StatMecProj/'
 show = True
 
 args = (n, nb, nE, T, V, Mvec,
@@ -41,7 +42,7 @@ args = (n, nb, nE, T, V, Mvec,
         folder, show)
 
 # Other Params
-numIter = 1000
+numIter = 1100
 Ttol = 0.7
 
 # Initial layout
@@ -54,11 +55,9 @@ LTCplot = np.zeros(numIter)
 LTCmin = np.Inf
 layouts = []
 
-print(pc.gaussErr(w,nE)) #TMP
-
 for i in range(numIter):
 
-    LTC = pc.PhononCode(*args,layout,False)
+    LTC = pc.PhononCode(*(args+(layout,False)))
 
     if rank == master:
     
@@ -79,8 +78,9 @@ for i in range(numIter):
         LTCplot[i] = LTCmin
         layouts.append(bestLayout)
         
-        if i%100 == 0:
-            print('Iteration: %d, LTC: %f'%(i,LTCmin))
+        if i%1 == 0:
+            print('Iteration: %d, LTC: %f, Elapsed time: %f'%(i,LTCmin,time.time()-iterTime))
+            iterTime = time.time()
 
 if rank == master:
     plt.plot(LTCplot)
@@ -91,7 +91,7 @@ if rank == master:
     layout = layouts[np.argmin(LTCplot)]
     plt.show()
 
-LTC = pc.PhononCode(*args,layout,True)
+LTC = pc.PhononCode(*(args+(layout,True)))
 
 LTC = pc.PhononCode(n, nb, nE, T, V, Mvec,
         defects, DefConc, ["ordered"], mval, kval, clusterSize,
