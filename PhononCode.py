@@ -404,14 +404,17 @@ def PhononCode(*args):
         ntries=3
         for tries in range(ntries):
             try:
-                omegasqsc, eigenvecsc = la.eigh(-sysmat)
+                try:
+                    omegasqsc, eigenvecsc = la.eigh(-sysmat)
+                except:
+                    omegasqsc, eigenvecsc = la.eig(-sysmat)
+                    print(V,file=sys.stderr)
+                    print(Mvec,file=sys.stderr)
+                    pickle.dump(D, open("Dmatrix.dat","wb"))
+                    print("Defect layout:",file=sys.stderr)
+                    print(occpos,file=sys.stderr)
+                    print("Eigenvalues did not converge after try %d"%tries,file=sys.stderr)
             except:
-                print(V)
-                print(Mvec)
-                pickle.dump(D, open("Dmatrix.dat","wb"))
-                print("Defect layout:",file=sys.stderr)
-                print(occpos,file=sys.stderr)
-                print("Eigenvalues did not converge after try %d"%tries,file=sys.stderr)
                 if tries==ntries-1:
                     raise
             else:
