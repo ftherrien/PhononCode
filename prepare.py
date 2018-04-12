@@ -1,4 +1,4 @@
-from pythonQE import pwcalc, phcalc, q2rcalc, matcalc, submit_jobs
+from pythonQE import pwcalc, phcalc, q2rcalc, matcalc, dyncalc, submit_jobs
 from copy import deepcopy
 import os
 from pylada.crystal import supercell, Structure
@@ -60,7 +60,9 @@ def closest_box(path, rsc, irsc):
             for k in range(2):
                 closest.append(np.concatenate((approx(i,epathrc[:,0:1]), approx(j,epathrc[:,1:2]), approx(k,epathrc[:,2:3])), axis=1))
 
-    return  unique(np.concatenate(closest, axis=0)).dot(rsc)/ (np.pi*2)
+    newpath = unique(np.concatenate(closest, axis=0)).dot(rsc)/ (np.pi*2)
+
+    return np.concatenate((newpath, np.ones((np.shape(newpath)[0],1))), axis=1).tolist() #Adding ones for QE
 
 def on_path(path, rsc, irsc):
     epath = np.array(explicit_path(path))*np.pi*2
@@ -93,155 +95,166 @@ def on_path(path, rsc, irsc):
                 isonpath = False
             if isonpath:
                 onpath.append(list(p))
-                   
-    return unique(np.array(onpath))
-           
 
-# Primittive structure
-A = Structure([[0.5, 0.5, 0],[0.5, 0, 0.5],[0, 0.5, 0.5]])
-A.add_atom(0,0,0,'Si')
-A.add_atom(0.25,0.25,0.25,'Si')
+    newpath = unique(np.array(onpath)) 
+         
+    return np.concatenate((newpath, np.ones((np.shape(newpath)[0],1))), axis=1).tolist() #Adding ones for QE         
 
-# Building the (perfect) supercell
-Asc = supercell(A,[[10,0,0],[0,10,0],[0,0,10]]);
-
-
-# Super Cell Calculation #############################################################
-
-pwrelax = pwcalc()
-pwrelax.name = "sc"
-pwrelax.calc_type = "vc-relax"
-pwrelax.restart_mode = "from_scratch"
-pwrelax.pseudo_dir = os.path.expanduser("~/scratch/pseudo_pz-bhs/")
-pwrelax.celldm = 10.7
-pwrelax.ecutwfc = 45.0
-pwrelax.ecutrho = 400.0
-pwrelax.nbnd = len(Asc)*4
-pwrelax.occupations = "fixed"
-pwrelax.masses = {'Si':pt.Si.atomic_weight}
-pwrelax.from_pylada(Asc)
-pwrelax.kpoints = [8,8,8]
-
-pwrelax.write_in()
-
-submit_jobs(pwrelax, np = 48)
-ene = pwrelax.read_energies()
-while (abs(ene[-1] - ene[-2]) > 1e-8):
-    pwrelax.atomic_pos = pwrelax.read_atomic_pos()
-    pwrelax.cell = pwrelax.read_cell()
-    submit_jobs(pwrelax, np = 48)
+# Begin program ======================================================================
+if __name__ == "__main__":
+    np = 96
+    
+    # Primittive structure
+    A = Structure([[0.5, 0.5, 0],[0.5, 0, 0.5],[0, 0.5, 0.5]])
+    A.add_atom(0,0,0,'Si')
+    A.add_atom(0.25,0.25,0.25,'Si')
+    
+    # Building the (perfect) supercell
+    Asc = supercell(A,[[3,0,0],[0,3,0],[0,0,3]]);
+    
+    
+    # Super Cell Calculation #############################################################
+    
+    # Relaxation
+    pwrelax = pwcalc()
+    pwrelax.name = "sc"
+    pwrelax.calc_type = "vc-relax"
+    pwrelax.restart_mode = "from_scratch"
+    pwrelax.pseudo_dir = os.path.expanduser("~/scratch/pseudo_pz-bhs/")
+    pwrelax.celldm = 10.7
+    pwrelax.ecutwfc = 45.0
+    pwrelax.ecutrho = 400.0
+    pwrelax.nbnd = len(Asc)*4
+    pwrelax.occupations = "fixed"
+    pwrelax.masses = {'Si':pt.Si.atomic_weight}
+    pwrelax.from_pylada(Asc)
+    pwrelax.kpoints = [1,1,1]
+    
+    pwrelax.write_in()    
+#    submit_jobs(pwrelax, np = np)
     ene = pwrelax.read_energies()
-pwscf = deepcopy(pwrelax)
-pwscf.calc_type = 'scf'
-pwscf.atomic_pos = pwrelax.read_atomic_pos()
-pwscf.cell = pwrelax.read_cell()
-
-ph = phcalc()
-
-ph.name = pwscf.name
-ph.masses = pwscf.masses
-ph.qpoints = [0,0,0]
-
-q2r = q2rcalc()
-
-q2r.name = pwscf.name
-
-matdyn = matcalc()
-
-matdyn.name = pwscf.name
-matdyn.masses = pwscf.masses
-matdyn.path = [
-    [0.0000000,   0.0000000,   0.0000000, 1]]
-
-submit_jobs(pwscf, ph, q2r, matdyn, np = 48)
-
-pickle.dump(matdyn.read_eig(), open("eigsc.dat","wb"))
-
-# Primitive Cell Calculations ########################################################
-
-pwrelax = pwcalc()
-pwrelax.name = "pc"
-pwrelax.calc_type = "vc-relax"
-pwrelax.restart_mode = "from_scratch"
-pwrelax.pseudo_dir = os.path.expanduser("~/scratch/pseudo_pz-bhs/")
-pwrelax.celldm = 10.7
-pwrelax.ecutwfc = 45.0
-pwrelax.ecutrho = 400.0
-pwrelax.nbnd = len(A)*4
-pwrelax.occupations = "fixed"
-pwrelax.masses = {'Si':pt.Si.atomic_weight}
-pwrelax.from_pylada(A)
-pwrelax.kpoints = [8,8,8]
-
-pwrelax.write_in()
-
-submit_jobs(pwrelax, np = 48)
-ene = pwrelax.read_energies()
-while (abs(ene[-1] - ene[-2]) > 1e-8):
-    pwrelax.atomic_pos = pwrelax.read_atomic_pos()
-    pwrelax.cell = pwrelax.read_cell()
-    submit_jobs(pwrelax, np = 48)
+    while (abs(ene[-1] - ene[-2]) > 1e-8):
+        pwrelax.atomic_pos = pwrelax.read_atomic_pos()
+        pwrelax.cell = pwrelax.read_cell()
+        submit_jobs(pwrelax, np = np)
+        ene = pwrelax.read_energies()
+    
+    # Self consistant run
+    pwscf = deepcopy(pwrelax)
+    pwscf.calc_type = 'scf'
+    pwscf.atomic_pos = pwrelax.read_atomic_pos()
+    pwscf.cell = pwrelax.read_cell()
+    
+    # Phonons
+    ph = phcalc()
+    
+    ph.name = pwscf.name
+    ph.masses = pwscf.masses
+    ph.ldisp = False
+    ph.qlist = [[0.0,0.0,0.0]]    
+       
+    # Fourier Transform
+    dynmat = dyncalc()
+    
+    dynmat.name = pwscf.name
+    
+    #submit_jobs(pwscf, np = np)
+    submit_jobs(ph, np = 96)
+    submit_jobs(dynmat, np = 1)
+    
+    pickle.dump(matdyn.read_eig(), open("eigsc.dat","wb"))
+    
+    # Primitive Cell Calculations ########################################################
+    
+    # Relaxation
+    pwrelax = pwcalc()
+    pwrelax.name = "pc"
+    pwrelax.calc_type = "vc-relax"
+    pwrelax.restart_mode = "from_scratch"
+    pwrelax.pseudo_dir = os.path.expanduser("~/scratch/pseudo_pz-bhs/")
+    pwrelax.celldm = 10.7
+    pwrelax.ecutwfc = 45.0
+    pwrelax.ecutrho = 400.0
+    pwrelax.nbnd = len(A)*4
+    pwrelax.occupations = "fixed"
+    pwrelax.masses = {'Si':pt.Si.atomic_weight}
+    pwrelax.from_pylada(A)
+    pwrelax.kpoints = [8,8,8]
+    
+    pwrelax.write_in()
+    
+    submit_jobs(pwrelax, np = np)
     ene = pwrelax.read_energies()
-pwscf = deepcopy(pwrelax)
-pwscf.calc_type = 'scf'
-pwscf.atomic_pos = pwrelax.read_atomic_pos()
-pwscf.cell = pwrelax.read_cell()
-
-ph = phcalc()
-
-ph.name = pwscf.name
-ph.masses = pwscf.masses
-ph.qpoints = [6,6,6]
-
-q2r = q2rcalc()
-
-q2r.name = pwscf.name
-
-matdyn = matcalc()
-
-matdyn.name = pwscf.name
-matdyn.masses = pwscf.masses
-
-rsc = reciprocal(Asc.cell)
-irsc = np.linalg.inv(rsc)
-
-path = [
-    [0.0000000,   0.0000000,   0.0000000, 10],
-    [0.7500000,   0.7500000,   0.0000000, 1 ],
-    [0.2500000,   1.0000000,   0.2500000, 10],
-    [0.0000000,   1.0000000,   0.0000000, 10],
-    [0.0000000,   0.0000000,   0.0000000, 10],
-    [0.5000000,   0.5000000,   0.5000000, 10],
-    [0.7500000,   0.7500000,   0.0000000, 1 ],
-    [0.2500000,   1.0000000,   0.2500000, 10],
-    [0.5000000,   1.0000000,   0.0000000, 10],
-    [0.0000000,   1.0000000,   0.0000000, 10],
-    [0.5000000,   1.0000000,   0.0000000, 10],
-    [0.5000000,   0.5000000,   0.5000000, 1 ]]
-
-
-submit_jobs(pwscf, ph, q2r, matdyn, np = 48)
-
-pickle.dump(matdyn.read_eig(), open("eigpc.dat","wb"))
-
-epath = np.array(explicit_path(path))
-
-path = on_path(path, rsc, irsc)
-#path = closest_box(path, rsc, irsc)
-path = np.concatenate((path, np.ones((np.shape(path)[0],1))), axis=1) #Adding ones for QE
-
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.scatter(path[:,0], path[:,1], path[:,2])
-ax.plot(epath[:,0], epath[:,1], epath[:,2])
-
-
-ax.view_init(0,180)
-plt.savefig('test.png')
-
-plt.show()
-
+    while (abs(ene[-1] - ene[-2]) > 1e-8):
+        pwrelax.atomic_pos = pwrelax.read_atomic_pos()
+        pwrelax.cell = pwrelax.read_cell()
+        submit_jobs(pwrelax, np = np)
+        ene = pwrelax.read_energies()
+    
+    # Self consistant run
+    pwscf = deepcopy(pwrelax)
+    pwscf.calc_type = 'scf'
+    pwscf.atomic_pos = pwrelax.read_atomic_pos()
+    pwscf.cell = pwrelax.read_cell()
+    
+    # Phonons
+    ph = phcalc()
+    
+    ph.name = pwscf.name
+    ph.masses = pwscf.masses
+    ph.qpoints = [6,6,6]
+    
+    # Inverse Fourier transform
+    q2r = q2rcalc()
+    
+    q2r.name = pwscf.name
+    
+    # Fourier transform
+    matdyn = matcalc()
+    
+    matdyn.name = pwscf.name
+    matdyn.masses = pwscf.masses
+    
+    rsc = reciprocal(Asc.cell) #reciprocal lattice
+    irsc = np.linalg.inv(rsc) #inverse of reciprocal lattice
+    
+    # q-path for primittive cell
+    path = [
+        [0.0000000,   0.0000000,   0.0000000, 10],
+        [0.7500000,   0.7500000,   0.0000000, 1 ],
+        [0.2500000,   1.0000000,   0.2500000, 10],
+        [0.0000000,   1.0000000,   0.0000000, 10],
+        [0.0000000,   0.0000000,   0.0000000, 10],
+        [0.5000000,   0.5000000,   0.5000000, 10],
+        [0.7500000,   0.7500000,   0.0000000, 1 ],
+        [0.2500000,   1.0000000,   0.2500000, 10],
+        [0.5000000,   1.0000000,   0.0000000, 10],
+        [0.0000000,   1.0000000,   0.0000000, 10],
+        [0.5000000,   1.0000000,   0.0000000, 10],
+        [0.5000000,   0.5000000,   0.5000000, 1 ]]
+    
+    matdyn.path = on_path(path, rsc, irsc) #Points if the reciprocal lattice on the path
+    #matdyn.path = closest_box(path, rsc, irsc) #Closest 8 points to reciprocal lattice
+    
+    epath = np.array(explicit_path(path)) # Explicit path for plotting 
+    apath = np.array(matdyn.path) # Path in array for for plotting 
+    
+    # Displaying the high symmetry path
+    from mpl_toolkits.mplot3d import Axes3D
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(apath[:,0], apath[:,1], apath[:,2])
+    ax.plot(epath[:,0], epath[:,1], epath[:,2])
+    
+    ax.view_init(0,180)
+    plt.savefig('Qpath.png')
+    
+    
+    # Submitting all the jobs
+    submit_jobs(pwscf, ph, q2r, matdyn, np = np)
+    
+    pickle.dump(matdyn.read_eig(), open("eigpc.dat","wb"))
+    
