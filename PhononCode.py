@@ -479,7 +479,7 @@ def PhononCode(*args):
         if gaussian:
             Emin = - sig * np.sqrt( np.log( dE / ( CutOffErr * sig * np.sqrt( np.pi ) ) ) )
             nE = nE+int(np.ceil(-Emin/dE))
-            Emin = np.ceil(Emin/dE)*dE
+            Emin = np.floor(Emin/dE)*dE
         else:
             Emin = 0
         E=np.linspace(Emin,MaxOmegasc*1.1,nE)
@@ -498,7 +498,7 @@ def PhononCode(*args):
                 Emin = - sig * np.sqrt( np.log( dE / ( CutOffErr * sig * np.sqrt( np.pi ) ) ) )
                 nE = nE+int(np.ceil(-Emin/dE))
                 nE_list.append(nE)
-                Emin = np.ceil(Emin/dE)*dE
+                Emin = np.floor(Emin/dE)*dE
             else:
                 Emin = 0
             E=np.linspace(Emin,omegasc.max()*1.1,nE)
