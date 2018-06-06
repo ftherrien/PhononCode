@@ -123,7 +123,7 @@ def on_path_plot(path, rsc, irsc):
     closest_points = unique(np.round(epathrc)).dot(rsc) / (2*np.pi)
     onpath = []
     dist_on_path = 0
-    syms = [0]
+    syms = [0] # list of positions on path of the high symmerty points
     pos_on_path = []
     for i,v in enumerate(path[:-1,:]):
         if npts[i] > 1:
@@ -159,7 +159,15 @@ def on_path_plot(path, rsc, irsc):
                # Adds the points that passed all the tests on the path
                if isonpath:
                    onpath.append(list(p))
-                   pos_on_path.append(dist_on_path + np.linalg.norm(p-v))
+                   newdist = dist_on_path + np.linalg.norm(p-v)
+                   if pos_on_path == []:
+                       idx = 0
+                   else:
+                       idx = len(pos_on_path)-1 
+                       # Goes through the list to make sure it is ordered (closest point is not necessarily ordered)
+                       while newdist < pos_on_path[idx]:
+                           idx += -1
+                   pos_on_path.insert(idx+1, dist_on_path + np.linalg.norm(p-v))
 
             dist_on_path += np.linalg.norm(path[i+1]-v)
             syms.append(dist_on_path)
@@ -234,199 +242,3 @@ def to_relaxed_coord(path, irpc_perfect, rpc):
     weights = np.array(path)[:,3:4]
     path = np.array(path)[:,:3].dot(irpc_perfect).dot(rpc)
     return np.concatenate((path, weights), axis=1).tolist()
-
-
-# Begin program ======================================================================
-if __name__ == "__main__":
-    nproc = 64
-    
-    # Primittive structure
-    perfectStruc = Structure([[0.5, 0.5, 0],[0.5, 0, 0.5],[0, 0.5, 0.5]])
-    perfectStruc.add_atom(0,0,0,'Si')
-    perfectStruc.add_atom(0.25,0.25,0.25,'Si')
-    
-    # Building the (perfect) supercell
-    perfectStrucsc = supercell(perfectStruc,[[3,0,0],[0,3,0],[0,0,3]]);
-        
-    # Primitive Cell Calculations ########################################################
-    
-    # Relaxation
-    pwrelax = pwcalc()
-    pwrelax.name = "pc"
-    pwrelax.calc_type = "vc-relax"
-    pwrelax.restart_mode = "from_scratch"
-    pwrelax.pseudo_dir = os.path.expanduser("~/scratch/pseudo_pz-bhs/")
-    pwrelax.celldm = 10.7
-    pwrelax.ecutwfc = 45.0
-    pwrelax.ecutrho = 400.0
-    pwrelax.nbnd = len(perfectStruc)*4
-    pwrelax.occupations = "fixed"
-    pwrelax.masses = {'Si':pt.Si.atomic_weight}
-    pwrelax.from_pylada(perfectStruc)
-    pwrelax.kpoints = [8,8,8]
-    
-    # submit_jobs(pwrelax, np = nproc)
-    ene = pwrelax.read_energies()
-    while (abs(ene[-1] - ene[-2]) > 1e-8):
-        pwrelax.atomic_pos = pwrelax.read_atomic_pos()
-        pwrelax.cell = pwrelax.read_cell()
-        submit_jobs(pwrelax, np = nproc)
-        ene = pwrelax.read_energies()
-    
-    # Self consistant run
-    pwscf = deepcopy(pwrelax)
-    pwscf.calc_type = 'scf'
-    pwscf.atomic_pos = pwrelax.read_atomic_pos()
-    pwscf.cell = pwrelax.read_cell()
-    
-    # Phonons
-    ph = phcalc()
-    
-    ph.name = pwscf.name
-    ph.masses = pwscf.masses
-    ph.qpoints = [6,6,6]
-    
-    # Inverse Fourier transform
-    q2r = q2rcalc()
-    
-    q2r.name = pwscf.name
-    
-    # Fourier transform
-    matdyn = matcalc()
-    
-    matdyn.name = pwscf.name
-    matdyn.masses = pwscf.masses
-    
-    # Setting cells and inverses
-    Struc = pwscf.to_pylada()
-
-    ippc = np.linalg.inv(perfectStruc.cell)
-    Strucsc = perfectStrucsc.cell.dot(ippc).dot(Struc.cell)
-
-    Strucsc = supercell(Struc, Strucsc)
-
-    pickle.dump((Struc, Strucsc), open("structures.dat","wb"))
-
-    rsc = reciprocal(Strucsc.cell) #reciprocal lattice
-    irsc = np.linalg.inv(rsc) #inverse of reciprocal lattice
-
-    rpc = reciprocal(Struc.cell) #reciprocal lattice
-    irpc = np.linalg.inv(rpc) #inverse of reciprocal lattice
-
-    rpc_prefect = reciprocal(perfectStruc.cell)
-    irpc_perfect = np.linalg.inv(rpc_prefect)
-    
-    # q-path for primittive cell
-    path = [
-        [0.0000000,   0.0000000,   0.0000000, 10],
-        [0.7500000,   0.7500000,   0.0000000, 1 ],
-        [0.2500000,   1.0000000,   0.2500000, 10],
-        [0.0000000,   1.0000000,   0.0000000, 10],
-        [0.0000000,   0.0000000,   0.0000000, 10],
-        [0.5000000,   0.5000000,   0.5000000, 10],
-        [0.7500000,   0.7500000,   0.0000000, 1 ],
-        [0.2500000,   1.0000000,   0.2500000, 10],
-        [0.5000000,   1.0000000,   0.0000000, 10],
-        [0.0000000,   1.0000000,   0.0000000, 10],
-        [0.5000000,   1.0000000,   0.0000000, 10],
-        [0.5000000,   0.5000000,   0.5000000, 1 ]]
-
-    path = to_relaxed_coord(path, irpc_perfect, rpc)
-
-    epath = np.array(explicit_path(path)) # Explicit path for plotting     
-
-    pickle.dump(path, open("path.dat","wb"))
-
-    path = on_path(path, rsc, irsc) # Points of the reciprocal lattice on the path
-    #matdyn.path = closest_box(path, rsc, irsc) # Closest 8 points to reciprocal lattice
-    path.extend(all_points(rpc, irpc, rsc, irsc))
-    path = unique(np.array(path)).tolist()
-    matdyn.path = derivative_points(path, rsc) # All the points in the SC reciprocal space that are inside the PC brilliouin zone
-    
-
-    apath = np.array(matdyn.path) # Path in array for for plotting 
-    
-    # Displaying the high symmetry path
-    from mpl_toolkits.mplot3d import Axes3D
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(apath[:,0], apath[:,1], apath[:,2])
-    ax.plot(epath[:,0], epath[:,1], epath[:,2])
-    rpc = rpc / (2*np.pi)
-    ax.quiver(np.zeros(3), np.zeros(3), np.zeros(3), rpc[:,0], rpc[:,1], rpc[:,2])
-    
-    ax.view_init(-45,-45)
-    plt.savefig('Qpath.png')    
-    
-    # Submitting all the jobs
-    # submit_jobs(pwscf, ph, q2r, matdyn, np = nproc)
-    submit_jobs(matdyn, np = 1)
-    
-    pickle.dump(matdyn.read_eig(), open("eigpc.dat","wb"))
-
-    # Super Cell Calculation #############################################################
-
-    # ------> No relaxation for testing 
-    # Relaxation
-    pwrelax = pwcalc()
-    pwrelax.name = "sc"
-    pwrelax.calc_type = "relax"
-    pwrelax.restart_mode = "from_scratch"
-    pwrelax.pseudo_dir = os.path.expanduser("~/scratch/pseudo_pz-bhs/")
-    pwrelax.celldm = 10.7
-    pwrelax.ecutwfc = 45.0
-    pwrelax.ecutrho = 400.0
-    pwrelax.nbnd = len(perfectStrucsc)*4
-    pwrelax.occupations = "fixed"
-    pwrelax.masses = {'Si':pt.Si.atomic_weight}
-    pwrelax.from_pylada(perfectStrucsc)
-    pwrelax.kpoints = [1,1,1]
-    
-    # #submit_jobs(pwrelax, np = nproc)
-    # ene = pwrelax.read_energies()
-    # while (abs(ene[-1] - ene[-2]) > 1e-8):
-    #     pwrelax.atomic_pos = pwrelax.read_atomic_pos()
-    #     pwrelax.cell = pwrelax.read_cell()
-    #     submit_jobs(pwrelax, np = nproc)
-    #     ene = pwrelax.read_energies()
-    
-    # Self consistant run
-    pwscf = deepcopy(pwrelax)
-    pwscf.calc_type = 'scf'
-    pwscf.from_pylada(Strucsc)
-    # pwscf.atomic_pos = pwrelax.read_atomic_pos() # With relaxation
-    # pwscf.cell = pwrelax.read_cell() # With relaxation
-
-    # Phonons
-    ph = phcalc()
-    
-    ph.name = pwscf.name
-    ph.masses = pwscf.masses
-    ph.qpoints = [2,2,2]
-    # ph.ldisp = False
-    # ph.qlist = [[0.0,0.0,0.0]]    
-
-    # dynmat = dyncalc()
-    # dynmat.name = pwscf.name
-    
-    # Inverse Fourier transform
-    q2r = q2rcalc()
-    
-    q2r.name = pwscf.name
-    
-    # Fourier transform
-    matdyn = matcalc()
-    
-    matdyn.name = pwscf.name
-    matdyn.masses = pwscf.masses
-
-    matdyn.path = [[0,0,0,1]]
-
-    submit_jobs(pwscf, ph, np = nproc)
-    submit_jobs(q2r, matdyn, np = 1)
-
-    pickle.dump(matdyn.read_eig(), open("eigsc.dat","wb"))
-

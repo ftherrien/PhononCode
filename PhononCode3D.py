@@ -12,6 +12,7 @@ from mpl_toolkits.mplot3d import Axes3D
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 plt.rcParams.update({'figure.max_open_warning': 0})
+
 # try:
 #     plt.rc('text', usetex=True)
 #     plt.rc('font', family='serif')
@@ -60,7 +61,7 @@ w = 0.01
 CutOffErr=10**-4
 output = True
 folder = "outdir"
-gaussian = True
+gaussian = False
 
 # \/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\//\/\/\/\/\/\
 
@@ -86,7 +87,7 @@ possc = np.floor(np.array([a.pos.tolist() for a in Asc]).dot(icell)+tol).dot(A.c
 
 Q = np.array(qsc)
 q = [np.array(v)*2*np.pi for v in q]
-q[:8] = np.array(prepare.on_path(path, rsc, irsc))[:,:3]*np.pi*2 #TMP
+# q[:8] = np.array(prepare.on_path(path, rsc, irsc))[:,:3]*np.pi*2 #TMP
 
 nq = len(q)
 if rank == master and output:
@@ -148,36 +149,36 @@ Local_range = load_balance(nq)
 Local_Sf = np.zeros((npc,nE,len(Local_range)))
 Local_Sftotal = np.zeros((nE,len(Local_range)))
 
-# ############[ SPECTRAL FUNCTION ]############
-# for jq,iq in enumerate(Local_range):
-#     t_q_i = time.time()
-#     deltalist=np.zeros(nE)
-#     for iE in range(nE):
-#          snorm = np.zeros(3)*(1+0*1j)
-#          for i in range(nsc):
-#              if gaussian:
-#                  delta = dE / (sig*np.sqrt(np.pi)) * np.exp(-(omegasc[i] - E[iE]) ** 2 / sig**2)
-#                  condition = delta > CutOffErr
-#              else:
-#                  delta = 1
-#                  condition = abs(omegasc[i] - E[iE]) < dE/2
-#              if condition:
-#                  deltalist[iE] = deltalist[iE] + delta
-#                  ScalarProd = np.zeros(npc)*(1+0*1j)
-#                  for l in range(nsc):
-#                      for s in range(npc):
-#                          ScalarProd[s] = ScalarProd[s] + normalize*np.conj(eigenvecsc[l,i])*eigenvecpc[iq][l%npc,s]*np.exp(1j*q[iq].dot(possc[l//3]))
+############[ SPECTRAL FUNCTION ]############
+for jq,iq in enumerate(Local_range):
+    t_q_i = time.time()
+    deltalist=np.zeros(nE)
+    for iE in range(nE):
+         snorm = np.zeros(3)*(1+0*1j)
+         for i in range(nsc):
+             if gaussian:
+                 delta = dE / (sig*np.sqrt(np.pi)) * np.exp(-(omegasc[i] - E[iE]) ** 2 / sig**2)
+                 condition = delta > CutOffErr
+             else:
+                 delta = 1
+                 condition = abs(omegasc[i] - E[iE]) < dE/2
+             if condition:
+                 deltalist[iE] = deltalist[iE] + delta
+                 ScalarProd = np.zeros(npc)*(1+0*1j)
+                 for l in range(nsc):
+                     for s in range(npc):
+                         ScalarProd[s] = ScalarProd[s] + normalize*np.conj(eigenvecsc[l,i])*eigenvecpc[iq][l%npc,s]*np.exp(1j*q[iq].dot(possc[l//3]))
                      
-#                  for s in range(npc):
-#                      Local_Sf[s, iE, jq] = Local_Sf[s, iE, jq] + delta * abs(ScalarProd[s]) ** 2
-#     t_q_f = time.time()
-#     if output:
-#         print "Finished %d in core %d in %f seconds"%(iq,rank,t_q_f - t_q_i)
-# # ////////////[ SPECTRAL FUNCTION ]////////////
+                 for s in range(npc):
+                     Local_Sf[s, iE, jq] = Local_Sf[s, iE, jq] + delta * abs(ScalarProd[s]) ** 2
+    t_q_f = time.time()
+    if output:
+        print "Finished %d in core %d in %f seconds"%(iq,rank,t_q_f - t_q_i)
+# ////////////[ SPECTRAL FUNCTION ]////////////
 
-# Sf = np.concatenate(comm.allgather(Local_Sf),2)
+Sf = np.concatenate(comm.allgather(Local_Sf),2)
 
-Sf = pickle.load(open(folder+"Sf.dat")) # TMP
+# Sf = pickle.load(open(folder+"Sf.dat")) # TMP
 
 Sf[Sf<MacPrecErr]=0
 
@@ -208,7 +209,7 @@ if output and rank == master:
     omegadisp = np.zeros((len(q_index), npc))
     plot_n = 100
     Sf_plot = np.zeros((npc, nE, plot_n))
-    linq = np.linspace(0,syms[-1],plot_n+1)
+    linq = np.linspace(0,syms[-1],plot_n)
     for i,ind in enumerate(q_index):
         omegadisp[i,:] = omegapc[ind]
         Sf_plot[:,:,np.where(linq <= q_length[i])[0][-1]] = Sf[:,:,ind]    
@@ -268,67 +269,67 @@ if rank == master:
         EAvg[s,:] = EAvg[s,:]/np.sum(Sf[s, :, :], 0)
         EsqAvg[s,:] = EsqAvg[s,:]/np.sum(Sf[s, :, :], 0)
 
-        Var = EsqAvg-EAvg**2
-        DeltaE = np.sqrt(Var)
-        Tau = 1/DeltaE
+    Var = EsqAvg-EAvg**2
+    DeltaE = np.sqrt(Var)
+    Tau = 1/DeltaE
 
      # ////////////[ Life time and Averages ]////////////
 
-        if output:
+    if output:
 
-            # Average and standard deviation plot ------------
-            plt.figure()
-            plt.plot(q_length,EAvg[:,q_index].T)
-            resetColors(plt)
-            for s in range(npc):
-                plt.fill_between(q_length, EAvg[s, q_index] - DeltaE[s, q_index], EAvg[s, q_index] + DeltaE[s, q_index], alpha=0.2)
-            resetColors(plt)
-            plt.plot(q_length,omegadisp,'--')
-            plt.xlim((0,syms[-1]))
+        # Average and standard deviation plot ------------
+        plt.figure()
+        plt.plot(q_length,EAvg[:,q_index].T)
+        resetColors(plt)
+        for s in range(npc):
+            plt.fill_between(q_length, EAvg[s, q_index] - DeltaE[s, q_index], EAvg[s, q_index] + DeltaE[s, q_index], alpha=0.2)
+        resetColors(plt)
+        plt.plot(q_length,omegadisp,'--')
+        plt.xlim((0,syms[-1]))
 
-            # Location of highsymmetry points along the path
-            ax = plt.gca()
-            ax.set_xticks(syms)
-            ax.set_xticklabels([r'\Gamma','K\|U','X',r'\Gamma','L','K\|U','W','X','W','L'])
+        # Location of highsymmetry points along the path
+        ax = plt.gca()
+        ax.set_xticks(syms)
+        ax.set_xticklabels([r'\Gamma','K\|U','X',r'\Gamma','L','K\|U','W','X','W','L'])
     
-            plt.title('Average bands and standard deviation along high symmetry path')
-            plt.xlabel(r'High symmetry q-points')
-            plt.ylabel(r'Frequency (THz)')
-            plt.margins(0,0)
+        plt.title('Average bands and standard deviation along high symmetry path')
+        plt.xlabel(r'High symmetry q-points')
+        plt.ylabel(r'Frequency (THz)')
+        plt.margins(0,0)
 
-            # Add dashed lines
-            for sym in syms[1:]:
-                plt.plot([sym,sym],ax.get_ylim(),'--k',alpha=0.5)
+        # Add dashed lines
+        for sym in syms[1:]:
+            plt.plot([sym,sym],ax.get_ylim(),'--k',alpha=0.5)
 
-            plt.savefig(folder+"avg_std.png")
+        plt.savefig(folder+"avg_std.png")
 
-            # Lifetime plot (vs q)------------
+        # Lifetime plot (vs q)------------
 
-            plt.figure()
-            plt.plot(q_length,Tau[:,q_index].T)
-            plt.xlim((0,syms[-1]))
+        plt.figure()
+        plt.plot(q_length,Tau[:,q_index].T)
+        plt.xlim((0,syms[-1]))
 
-            # Location of highsymmetry points along the path
-            ax = plt.gca()
-            ax.set_xticks(syms)
-            ax.set_xticklabels([r'\Gamma','K\|U','X',r'\Gamma','L','K\|U','W','X','W','L'])
-            plt.margins(0,0)
+        # Location of highsymmetry points along the path
+        ax = plt.gca()
+        ax.set_xticks(syms)
+        ax.set_xticklabels([r'\Gamma','K\|U','X',r'\Gamma','L','K\|U','W','X','W','L'])
+        plt.margins(0,0)
 
-            # Add dashed lines
-            for sym in syms[1:]:
-                plt.plot([sym,sym],ax.get_ylim(),'--k',alpha=0.5)
+        # Add dashed lines
+        for sym in syms[1:]:
+            plt.plot([sym,sym],ax.get_ylim(),'--k',alpha=0.5)
 
-            plt.ylabel(r'Lifetime(ps)')
-            plt.xlabel(r'High symmetry q-points')
-            plt.title("Lifetime along high symmetry path")
-            plt.savefig(folder+"tau_q.png")
+        plt.ylabel(r'Lifetime(ps)')
+        plt.xlabel(r'High symmetry q-points')
+        plt.title("Lifetime along high symmetry path")
+        plt.savefig(folder+"tau_q.png")
 
-            plt.figure()
-            plt.plot(EAvg.T, Tau.T, '.')
-            plt.ylabel(r'Lifetime(ps)')
-            plt.xlabel(r'Frenquency (THz)')
-            plt.title("Lifetime as a function of frequency (on all q-points)")
-            plt.savefig(folder+"tau_w.png")
+        plt.figure()
+        plt.plot(EAvg.T, Tau.T, '.')
+        plt.ylabel(r'Lifetime(ps)')
+        plt.xlabel(r'Frenquency (THz)')
+        plt.title("Lifetime as a function of frequency (on all q-points)")
+        plt.savefig(folder+"tau_w.png")
 
     ############[ Lattice Thermal Conductivity ]############
 
@@ -400,9 +401,11 @@ if rank == master:
     k = np.zeros((npc,len(q_index + q_integral),3,3))
     for i_npc, v_npc in enumerate(v):
         for i_q, v_q in enumerate(v_npc):
+            print np.reshape(v_q,(3,1)).dot(np.reshape(v_q,(1,3)))
+            print "---"
             k[i_npc,i_q,:,:] = (2*np.pi)**3/Vol * np.sum(C[i_npc,i_q]*np.reshape(v_q,(3,1)).dot(np.reshape(v_q,(1,3)))*Tau[i_npc,i_q],1)
 
-    LTC = np.sum(np.sum(k, axis = 0),axis = 0)
+    LTC = np.sum(np.sum(k[:,q_integral,:,:], axis = 0),axis = 0)
 
     k_plot = np.trace(k, axis1=2, axis2=3)
 
@@ -426,12 +429,14 @@ if rank == master:
         plt.ylabel(r'LTC (a.u.)')
         plt.xlabel(r'High symmetry q-points')
         plt.title("Lifetime along high symmetry path")
-        plt.savefig(folder+"tau_q.png")
+        plt.savefig(folder+"k_q.png")
 
         print "##################################################"
         print "Total Lattice Thermal Conductivity:", LTC 
         for s in range(npc):
-            print "Band contribution:", np.sum(k, axis = 1)[s]
+            print "Band contribution:", np.sum(k[:,q_integral,:,:], axis = 1)[s]
         print "##################################################"
             
     # ////////////[ Lattice Thermal Conductivity ]////////////
+
+exec(open("test_ortho.py").read())
