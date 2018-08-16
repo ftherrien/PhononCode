@@ -1,4 +1,10 @@
-from prepare import *
+from pythonQE import *
+from copy import deepcopy
+import os
+from pylada.crystal import supercell, Structure
+import pylada.periodic_table as pt
+import pickle
+import numpy as np
 
 nproc = 96
 
@@ -190,9 +196,9 @@ dynmat.name = pwscf.name
 # matdyn.path = [[0,0,0,1]]
 
 # Submit jobs
-# submit_jobs(pwscf, np = nproc)
+submit_jobs(pwscf, pw, np = nproc)
 # submit_jobs(q2r, matdyn, np = 1)
-# submit_jobs(dynmat, np = 1)
+submit_jobs(dynmat, np = 1)
 
 pickle.dump(dynmat.read_eig(), open("eigsc.dat","wb"))
 

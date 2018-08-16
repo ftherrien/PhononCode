@@ -2,20 +2,14 @@ import numpy as np
 import matplotlib
 import numpy.linalg as la
 import pickle
-import prepare
+from pythonQE import prepare
 from mpi4py import MPI
 import time
 from pylada.crystal import supercell
-
-# Display
-from mpl_toolkits.mplot3d import Axes3D
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-plt.rcParams.update({'figure.max_open_warning': 0})
+import argparse
 
 # try:
 #     plt.rc('text', usetex=True)
-#     plt.rc('font', family='serif')
 # except:
 #     pass
 
@@ -52,24 +46,52 @@ def resetColors(plt):
     except:
         plt.gca().set_color_cycle(None)
 
+def readOptions():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-i","--input",dest="folder",type=str, default=".", help="Input folder containing pickles")
+    parser.add_argument("-g","--nogauss",dest="gaussian",action="store_false", default=True, help="Use gaussian broadening")
+    parser.add_argument("-d","--display",dest="display",action="store_true", default=False, help="Use gaussian broadening")
+    parser.add_argument("-u","--use",dest="use",action="store_true", default=False, help="Use previously calculated spectral function")
+    options = parser.parse_args()
+    folder = options.folder
+    display = options.display
+    gaussian = options.gaussian
+    use = options.use
+
+    return folder, display, gaussian, use
+
 # Begin program ===============================================================================
 
 # PARAMETERS \/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/
+
+folder, display, gaussian, use = readOptions()
+
 
 nE = 100
 w = 0.01
 CutOffErr=10**-4
 output = True
-folder = "outdir"
-gaussian = False
+
+if not display:
+    # Display
+    from mpl_toolkits.mplot3d import Axes3D
+    matplotlib.use('Agg')
+
+import matplotlib.pyplot as plt
+plt.rcParams.update({'figure.max_open_warning': 0})
+
+matplotlib.rcParams['font.family'] = 'sans-serif'
+matplotlib.rcParams['font.sans-serif'] = ['Carlito', 'Helvetica']
 
 # \/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\//\/\/\/\/\/\
 
 # Importing data from prepare.py
-qsc, omegasc, eigenvecsc = pickle.load(open("eigsc.dat"))
-q, omega, eigenvec = pickle.load(open("eigpc.dat"))
-A, Asc = pickle.load(open("structures.dat"))
-path = pickle.load(open("path.dat"))
+qsc, omegasc, eigenvecsc = pickle.load(open(folder + "/eigsc.dat"))
+q, omega, eigenvec = pickle.load(open(folder + "/eigpc.dat"))
+A, Asc = pickle.load(open(folder + "/structures.dat"))
+path = pickle.load(open(folder + "/path.dat"))
+
+print folder + "/path.dat"
 
 # q = q[0:8]
 # omega = omega[0:8]
@@ -80,10 +102,13 @@ irsc = np.linalg.inv(rsc) #inverse of reciprocal lattice
 icell = np.linalg.inv(A.cell) #Inverse of primitive lattice
 
 tol = 1e-12
-tol_q = 1e-3
+tol_q = 2*1e-3
 T = 300
 
 possc = np.floor(np.array([a.pos.tolist() for a in Asc]).dot(icell)+tol).dot(A.cell) # Position in supercell
+
+# possc = np.array([a.pos.tolist() for a in Asc]) # Position in supercell
+
 
 Q = np.array(qsc)
 q = [np.array(v)*2*np.pi for v in q]
@@ -143,47 +168,51 @@ Emin = np.floor(Emin/dE)*dE
 E=np.linspace(Emin,MaxOmegasc,nE)
 normalize = 1/np.sqrt(nsc/npc)
 
-# Load balancing the jobs
-Local_range = load_balance(nq)
-
-Local_Sf = np.zeros((npc,nE,len(Local_range)))
-Local_Sftotal = np.zeros((nE,len(Local_range)))
-
-############[ SPECTRAL FUNCTION ]############
-for jq,iq in enumerate(Local_range):
-    t_q_i = time.time()
-    deltalist=np.zeros(nE)
-    for iE in range(nE):
-         snorm = np.zeros(3)*(1+0*1j)
-         for i in range(nsc):
-             if gaussian:
-                 delta = dE / (sig*np.sqrt(np.pi)) * np.exp(-(omegasc[i] - E[iE]) ** 2 / sig**2)
-                 condition = delta > CutOffErr
-             else:
-                 delta = 1
-                 condition = abs(omegasc[i] - E[iE]) < dE/2
-             if condition:
-                 deltalist[iE] = deltalist[iE] + delta
-                 ScalarProd = np.zeros(npc)*(1+0*1j)
-                 for l in range(nsc):
+if not use:
+    # Load balancing the jobs
+    Local_range = load_balance(nq)
+    
+    Local_Sf = np.zeros((npc,nE,len(Local_range)))
+    Local_Sftotal = np.zeros((nE,len(Local_range)))
+    
+    ############[ SPECTRAL FUNCTION ]############
+    for jq,iq in enumerate(Local_range):
+        t_q_i = time.time()
+        deltalist=np.zeros(nE)
+        for iE in range(nE):
+             snorm = np.zeros(3)*(1+0*1j)
+             for i in range(nsc):
+                 if gaussian:
+                     delta = dE / (sig*np.sqrt(np.pi)) * np.exp(-(omegasc[i] - E[iE]) ** 2 / sig**2)
+                     condition = delta > CutOffErr
+                 else:
+                     delta = 1
+                     condition = abs(omegasc[i] - E[iE]) < dE/2
+                 if condition:
+                     deltalist[iE] = deltalist[iE] + delta
+                     ScalarProd = np.zeros(npc)*(1+0*1j)
+                     for l in range(nsc):
+                         for s in range(npc):
+                             # ScalarProd[s] = ScalarProd[s] + normalize*np.conj(eigenvecsc[l,i])*np.exp(1j*q[iq].dot(possc[l//3]))
+                             ScalarProd[s] = ScalarProd[s] + normalize*np.conj(eigenvecsc[l,i])*eigenvecpc[iq][l%npc,s]*np.exp(1j*q[iq].dot(possc[l//3])) # OLD
+                         
                      for s in range(npc):
-                         ScalarProd[s] = ScalarProd[s] + normalize*np.conj(eigenvecsc[l,i])*eigenvecpc[iq][l%npc,s]*np.exp(1j*q[iq].dot(possc[l//3]))
-                     
-                 for s in range(npc):
-                     Local_Sf[s, iE, jq] = Local_Sf[s, iE, jq] + delta * abs(ScalarProd[s]) ** 2
-    t_q_f = time.time()
-    if output:
-        print "Finished %d in core %d in %f seconds"%(iq,rank,t_q_f - t_q_i)
-# ////////////[ SPECTRAL FUNCTION ]////////////
+                         Local_Sf[s, iE, jq] = Local_Sf[s, iE, jq] + delta * abs(ScalarProd[s]) ** 2
+        t_q_f = time.time()
+        if output:
+            print "Finished %d in core %d in %f seconds"%(iq,rank,t_q_f - t_q_i)
+    # ////////////[ SPECTRAL FUNCTION ]////////////
+    
+    Sf = np.concatenate(comm.allgather(Local_Sf),2)
 
-Sf = np.concatenate(comm.allgather(Local_Sf),2)
+    Sf[Sf<MacPrecErr]=0
 
-# Sf = pickle.load(open(folder+"Sf.dat")) # TMP
+    # Save the spectral function
+    pickle.dump( Sf, open(folder+"/Sf.dat", "wb" ) )
 
-Sf[Sf<MacPrecErr]=0
+else:
+    Sf = pickle.load(open(folder+"/Sf.dat")) # TMP
 
-# Save the spectral function
-pickle.dump( Sf, open(folder+"Sf.dat", "wb" ) )
 
 if output and rank == master:
 
@@ -193,8 +222,9 @@ if output and rank == master:
     ax.scatter(integral[:,0], integral[:,1], integral[:,2])
     ax.quiver(np.zeros(3), np.zeros(3), np.zeros(3), Asc.cell[:,0], Asc.cell[:,1], Asc.cell[:,2])
     ax.quiver(np.zeros(3), np.zeros(3), np.zeros(3), A.cell[:,0], A.cell[:,1], A.cell[:,2], color = 'red')
-    ax.view_init(0,90)
-    fig.savefig("integral.png")
+    for i in range(5):
+        ax.view_init(180./5.*i,90)
+        fig.savefig("integral_%d.png"%i)
 
     q_path, pos_on_path, syms = prepare.on_path_plot(path, rsc, irsc)
     q_path = np.array(q_path)[:,:3]*np.pi*2
@@ -217,7 +247,7 @@ if output and rank == master:
     plt.figure()
     plt.plot(q_length,omegadisp,'.')
     plt.plot(q_length,omegadisp,'k', alpha = 0.5)
-    plt.imshow(np.sum(Sf_plot,0), interpolation='None', origin='lower',
+    plt.imshow(np.sum(Sf_plot,0), interpolation='nearest', origin='lower',
                cmap=plt.cm.nipy_spectral_r,aspect='auto',extent=[0, syms[-1], E.min(), E.max()],vmax=1, vmin=0)
     plt.xlim((0,syms[-1]))
 
@@ -226,16 +256,18 @@ if output and rank == master:
     ax.set_xticks(syms)
     ax.set_xticklabels([r'\Gamma','K\|U','X',r'\Gamma','L','K\|U','W','X','W','L'])
     
-    plt.title('Phonon dispersion relation for pure Ge')
-    plt.xlabel(r'High symmetry q-points')
-    plt.ylabel(r'Frequency (THz)')
+    # plt.title('Phonon dispersion relation for pure Ge')
+    plt.xlabel(r'High symmetry q-points', fontsize=16)
+    plt.ylabel(r'Frequency (THz)', fontsize=16)
     plt.margins(0,0)
 
     # Add dashed lines
     for sym in syms[1:]:
         plt.plot([sym,sym],ax.get_ylim(),'--k',alpha=0.5)
 
-    plt.savefig(folder+"spectral_vs_primittive.png")
+    plt.savefig(folder+"/spectral_vs_primittive.svg")
+
+    print folder+"/spectral_vs_primittive.svg"
 
     plt.figure()
     plt.imshow(np.sum(Sf_plot,0), interpolation='None', origin='lower',
@@ -243,7 +275,7 @@ if output and rank == master:
     plt.xlabel(r'High symmetry q-points')
     plt.ylabel(r'Frequency (THz)')
     plt.title("Total band")
-    plt.savefig(folder+"spectral_map.png")
+    plt.savefig(folder+"/spectral_map.png")
 
 
     for s in range(npc):
@@ -253,7 +285,7 @@ if output and rank == master:
         plt.ylabel(r'Angular Frequency($\omega$)')
         plt.xlabel('Wave vector(q)')
         plt.title("Band %d"%s)
-        plt.savefig(folder+"band_%d_spectral_map.png"%s)
+        plt.savefig(folder+"/band_%d_spectral_map.png"%s)
 
 if rank == master:
     
@@ -301,7 +333,7 @@ if rank == master:
         for sym in syms[1:]:
             plt.plot([sym,sym],ax.get_ylim(),'--k',alpha=0.5)
 
-        plt.savefig(folder+"avg_std.png")
+        plt.savefig(folder+"/avg_std.png")
 
         # Lifetime plot (vs q)------------
 
@@ -322,14 +354,14 @@ if rank == master:
         plt.ylabel(r'Lifetime(ps)')
         plt.xlabel(r'High symmetry q-points')
         plt.title("Lifetime along high symmetry path")
-        plt.savefig(folder+"tau_q.png")
+        plt.savefig(folder+"/tau_q.png")
 
         plt.figure()
         plt.plot(EAvg.T, Tau.T, '.')
         plt.ylabel(r'Lifetime(ps)')
         plt.xlabel(r'Frenquency (THz)')
         plt.title("Lifetime as a function of frequency (on all q-points)")
-        plt.savefig(folder+"tau_w.png")
+        plt.savefig(folder+"/tau_w.png")
 
     ############[ Lattice Thermal Conductivity ]############
 
@@ -354,6 +386,10 @@ if rank == master:
     
     # Velocities
     v = np.zeros((npc,len(q_index + q_integral),3))
+    print "Q on path"
+    print np.array(q)[q_index]
+    print "Q integral"
+    print np.array(q)[q_integral]
     for iq, q_int in enumerate(q_index + q_integral):
         qp = q[q_int]
         # for each dimention...
@@ -384,9 +420,11 @@ if rank == master:
                     v[:,iq,:] += 1/dq[i]*(2*EAvg[:,q_p_ind:q_p_ind+1]-3/2*EAvg[:,q_int:q_int+1]-1/2*EAvg[:,q_p2_ind:q_p2_ind+1])
                 else:
                     raise(RuntimeError("The q-grid is incomplete!"))
+            # if left is present...
             elif q_p_ind == None and q_m_ind != None:
                 q_minus2 = qp - 2*rsc[i,:]
                 q_m2_ind = None
+                # check if the second nearest is present
                 for j in range(nq):
                     if la.norm(q_minus2 - q[j]) <= tol_q:
                         q_m2_ind = j
@@ -401,8 +439,6 @@ if rank == master:
     k = np.zeros((npc,len(q_index + q_integral),3,3))
     for i_npc, v_npc in enumerate(v):
         for i_q, v_q in enumerate(v_npc):
-            print np.reshape(v_q,(3,1)).dot(np.reshape(v_q,(1,3)))
-            print "---"
             k[i_npc,i_q,:,:] = (2*np.pi)**3/Vol * np.sum(C[i_npc,i_q]*np.reshape(v_q,(3,1)).dot(np.reshape(v_q,(1,3)))*Tau[i_npc,i_q],1)
 
     LTC = np.sum(np.sum(k[:,q_integral,:,:], axis = 0),axis = 0)
@@ -429,7 +465,7 @@ if rank == master:
         plt.ylabel(r'LTC (a.u.)')
         plt.xlabel(r'High symmetry q-points')
         plt.title("Lifetime along high symmetry path")
-        plt.savefig(folder+"k_q.png")
+        plt.savefig(folder+"/k_q.png")
 
         print "##################################################"
         print "Total Lattice Thermal Conductivity:", LTC 
@@ -439,4 +475,11 @@ if rank == master:
             
     # ////////////[ Lattice Thermal Conductivity ]////////////
 
-exec(open("test_ortho.py").read())
+if rank == master:
+    prim_ene = np.reshape(np.array(omega)[q_integral,:],(nsc,))
+    plt.figure()
+    plt.plot(np.ones(nsc), prim_ene, '.')
+    plt.plot(np.ones(nsc) + 0.1, omegasc, '.')
+    plt.xlim((0,2))
+    plt.savefig('compare.svg')
+    # exec(open("test_ortho.py").read())
