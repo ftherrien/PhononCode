@@ -154,14 +154,15 @@ for k in range(nq):
 
 # Defining the energy range 
 MaxOmegasc = omegasc.max()*1.1
-                             
+MinOmegasc = omegasc.min()     
+                        
 dE =  MaxOmegasc/(nE-1)
 sig = w*MaxOmegasc
 
 if gaussian:
-    Emin = - sig * np.sqrt( np.log( dE / ( CutOffErr * sig * np.sqrt( np.pi ) ) ) )
+    Emin =  MinOmegasc - sig * np.sqrt( np.log( dE / ( CutOffErr * sig * np.sqrt( np.pi ) ) ) )
 else:
-    Emin = 0
+    Emin = MinOmegasc
 nE = nE+int(np.ceil(-Emin/dE))
 Emin = np.floor(Emin/dE)*dE
 
@@ -478,8 +479,9 @@ if rank == master:
 if rank == master:
     prim_ene = np.reshape(np.array(omega)[q_integral,:],(nsc,))
     plt.figure()
-    plt.plot(np.ones(nsc), prim_ene, '.')
-    plt.plot(np.ones(nsc) + 0.1, omegasc, '.')
+    plt.plot(np.ones(nsc), prim_ene, '.', label = "Primittive")
+    plt.plot(np.ones(nsc) + 0.1, omegasc, '.', label = "Super cell")
+    plt.legend()
     plt.xlim((0,2))
     plt.savefig('compare.svg')
     # exec(open("test_ortho.py").read())

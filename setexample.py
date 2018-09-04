@@ -14,13 +14,13 @@ perfectStruc.add_atom(0,0,0,'Si')
 perfectStruc.add_atom(0.25,0.25,0.25,'Si')
 
 # Building the (perfect) supercell
-perfectStrucsc = supercell(perfectStruc,[[2,0,0],[0,2,0],[0,0,2]]);
+perfectStrucsc = supercell(perfectStruc,4*perfectStruc.cell);
     
 # Primitive Cell Calculations ########################################################
 
 # Relaxation
 pwrelax = pwcalc()
-pwrelax.name = "pc666"
+pwrelax.name = "pcPara"
 pwrelax.calc_type = "vc-relax"
 pwrelax.restart_mode = "from_scratch"
 pwrelax.pseudo_dir = os.path.expanduser("~/scratch/pseudo_pz-bhs/")
@@ -31,7 +31,7 @@ pwrelax.nbnd = len(perfectStruc)*4
 pwrelax.occupations = "fixed"
 pwrelax.masses = {'Si':pt.Si.atomic_weight}
 pwrelax.from_pylada(perfectStruc)
-pwrelax.kpoints = [6,6,6]
+pwrelax.kpoints = [8,8,8]
 
 submit_jobs(pwrelax, np = nproc)
 ene = pwrelax.read_energies()
@@ -119,15 +119,23 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.scatter(apath[:,0], apath[:,1], apath[:,2])
-ax.plot(epath[:,0], epath[:,1], epath[:,2])
-rpc = rpc / (2*np.pi)
-ax.quiver(np.zeros(3), np.zeros(3), np.zeros(3), rpc[:,0], rpc[:,1], rpc[:,2])
 
-ax.view_init(-45,-45)
-plt.savefig('Qpath.png')    
+fig = plt.figure()
+ax = Axes3D(fig)
+
+ax.scatter(apath[:,0], apath[:,1], apath[:,2], 'g')
+ax.scatter(np.array(path)[:,0], np.array(path)[:,1], np.array(path)[:,2], 'b')
+ax.plot(epath[:,0], epath[:,1], epath[:,2], 'r')
+rpc = rpc / (2*np.pi)
+
+for i in range(3):
+    base = np.array([np.zeros(3), rpc[(i+1)%3,:], rpc[(i+2)%3,:], rpc[(i+1)%3,:] + rpc[(i+2)%3,:]])
+    vec = rpc[i:i+1,:].T.dot(np.ones((1,4))).T
+    ax.quiver(base[:,0], base[:,1], base[:,2], vec[:,0], vec[:,1], vec[:,2], arrow_length_ratio=0)
+
+for i in range(10):
+    ax.view_init(45,i*180./10.)
+    plt.savefig("Qpath_%d.png"%i)    
 
 # Submitting all the jobs
 submit_jobs(pwscf, ph, np = nproc)
@@ -140,7 +148,7 @@ pickle.dump(matdyn.read_eig(), open("eigpc.dat","wb"))
 # ------> No relaxation for testing 
 # Relaxation
 pwrelax = pwcalc()
-pwrelax.name = "222sc"
+pwrelax.name = "scPara4"
 pwrelax.calc_type = "relax"
 pwrelax.restart_mode = "from_scratch"
 pwrelax.pseudo_dir = os.path.expanduser("~/scratch/pseudo_pz-bhs/")
@@ -196,7 +204,7 @@ dynmat.name = pwscf.name
 # matdyn.path = [[0,0,0,1]]
 
 # Submit jobs
-submit_jobs(pwscf, pw, np = nproc)
+submit_jobs(pwscf, ph, np = nproc)
 # submit_jobs(q2r, matdyn, np = 1)
 submit_jobs(dynmat, np = 1)
 
